@@ -40,7 +40,7 @@ async function initExtractors() {
   console.log("✅ YoutubeExtractor v3 loaded");
 
   await player.extractors.loadDefault((ext) => ext !== "YouTubeExtractor", {
-    SpotifyExtractorOptions: {
+    SpotifyExtractor: {
       clientId: process.env.SPOTIFY_CLIENT_ID,
       clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
     },
