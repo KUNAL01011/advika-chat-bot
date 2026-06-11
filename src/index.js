@@ -34,7 +34,7 @@ const player = new Player(client, {
 async function initExtractors() {
   await player.extractors.register(YoutubeExtractor, {
     streamOptions: {
-      useClient: "ANDROID",
+      useClient: "WEB",
     },
   });
   console.log("✅ YoutubeExtractor v3 loaded");
