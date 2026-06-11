@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
-    "postinstall": "node -e \"require('fs').writeFileSync('./node_modules/discord-voip/dist/index.js', 'require(\\\"@discordjs/voice\\\").')\""
+    "postinstall": "node -e \"require('fs').writeFileSync('./node_modules/discord-voip/dist/index.js', 'module.exports = require(\\\"@discordjs/voice\\\");')\""
   },
   "dependencies": {
     "@discord-player/extractor": "^4.5.0",
