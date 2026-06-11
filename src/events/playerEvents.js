@@ -12,9 +12,9 @@ function registerPlayerEvents(player) {
       .catch(() => {});
   });
 
-  // Suppressed: play.js reply handles "added to queue" confirmation
-  player.events.on("audioTrackAdd", (queue, track) => {});
-  player.events.on("audioTracksAdd", (queue, tracks) => {});
+  // Suppressed: play.js reply handles the confirmation message
+  player.events.on("audioTrackAdd", () => {});
+  player.events.on("audioTracksAdd", () => {});
 
   player.events.on("emptyQueue", (queue) => {
     const channel = queue.metadata?.channel;

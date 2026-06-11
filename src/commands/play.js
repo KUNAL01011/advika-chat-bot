@@ -32,7 +32,7 @@ module.exports = {
     try {
       const player = useMainPlayer();
 
-      // ── Determine query type ────────────────────────────────────────────────
+      // ── Query type detection ──────────────────────────────────────────────
       let searchQuery = query;
       let queryType = QueryType.AUTO;
 
@@ -50,15 +50,16 @@ module.exports = {
         const host = url.hostname.replace("www.", "");
 
         if (host === "youtube.com" || host === "youtu.be") {
-          const isPlaylistOnly =
-            url.pathname === "/playlist" && url.searchParams.has("list");
-          const isVideoInPlaylist =
-            url.searchParams.has("v") && url.searchParams.has("list");
+          const hasVideo = url.searchParams.has("v");
+          const hasList = url.searchParams.has("list");
+          const isPlaylistOnly = url.pathname === "/playlist" && hasList;
 
           if (isPlaylistOnly) {
+            // Pure playlist URL: youtube.com/playlist?list=xxx
             queryType = QueryType.YOUTUBE_PLAYLIST;
-          } else if (isVideoInPlaylist) {
-            // Strip &list= to avoid youtubei issue #13 (misclassified as playlist)
+          } else if (hasVideo && hasList) {
+            // Video-in-playlist URL: strip &list= to play just the video
+            // Avoids youtubei mis-classifying it as a playlist
             url.searchParams.delete("list");
             searchQuery = url.toString();
             queryType = QueryType.YOUTUBE_VIDEO;
@@ -66,18 +67,18 @@ module.exports = {
             queryType = QueryType.YOUTUBE_VIDEO;
           }
         } else if (host === "open.spotify.com" || host === "spotify.com") {
-          // Use AUTO — SpotifyExtractor claims it, bridges via our youtubei createStream
+          // AUTO lets SpotifyExtractor claim it; createStream handles audio bridge
           queryType = QueryType.AUTO;
         } else if (host === "soundcloud.com") {
           queryType = QueryType.SOUNDCLOUD_TRACK;
         }
         // else: AUTO handles everything else
       } else {
-        // Plain text → search YouTube directly
+        // Plain text — search YouTube directly
         queryType = QueryType.YOUTUBE_SEARCH;
       }
 
-      // ── Search ──────────────────────────────────────────────────────────────
+      // ── Search ────────────────────────────────────────────────────────────
       const searchResult = await player.search(searchQuery, {
         requestedBy: message.author,
         searchEngine: queryType,
@@ -89,7 +90,7 @@ module.exports = {
         );
       }
 
-      // ── Get or create queue ─────────────────────────────────────────────────
+      // ── Get or create queue ───────────────────────────────────────────────
       const queue = player.nodes.create(message.guild, {
         metadata: {
           channel: message.channel,
@@ -116,8 +117,7 @@ module.exports = {
         }
       }
 
-      // ── Add tracks ─────────────────────────────────────────────────────────
-      // No re-search loop — add directly, youtubei bridges lazily at play time
+      // ── Add tracks ────────────────────────────────────────────────────────
       if (searchResult.playlist) {
         queue.addTrack(searchResult.tracks);
       } else {
@@ -128,7 +128,7 @@ module.exports = {
         await queue.node.play();
       }
 
-      // ── Reply ───────────────────────────────────────────────────────────────
+      // ── Reply ─────────────────────────────────────────────────────────────
       if (searchResult.playlist) {
         await loadingMsg.edit(
           `✅ Added **${searchResult.tracks.length} tracks** from **${searchResult.playlist.title}**!\n` +

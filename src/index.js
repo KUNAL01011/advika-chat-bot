@@ -8,18 +8,17 @@ dns.setDefaultResultOrder("ipv4first");
 
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
 const { Player, QueryType, useMainPlayer } = require("discord-player");
-const {
-  YoutubeExtractor,
-  search: youtubeiSearch,
-} = require("discord-player-youtubei");
+
+// v2.0.0 exports YoutubeiExtractor (not YoutubeExtractor)
+const { YoutubeiExtractor } = require("discord-player-youtubei");
 const {
   SpotifyExtractor,
   AppleMusicExtractor,
   SoundCloudExtractor,
 } = require("@discord-player/extractor");
+
 const { startKeepAlive } = require("./utils/keepAlive");
 const { registerPlayerEvents } = require("./events/playerEvents");
-
 const readyEvent = require("./events/ready");
 const messageCreateEvent = require("./events/messageCreate");
 
@@ -34,72 +33,75 @@ const client = new Client({
   partials: [Partials.Channel],
 });
 
-// ─── discord-player ───────────────────────────────────────────────────────────
+// ─── Player ───────────────────────────────────────────────────────────────────
 const player = new Player(client, {
   skipOnNoStream: false,
 });
 
-// ─── Bridge stream function ───────────────────────────────────────────────────
-// This is used by SpotifyExtractor (and AppleMusic) to stream audio.
-// Instead of using the broken bridge (which checks for old YoutubeExtractor.instance),
-// we manually search YouTube using youtubei and return the YT track URL.
-// discord-player then picks it up and YoutubeExtractor (youtubei) streams it natively.
+// ─── Spotify/AppleMusic bridge via YoutubeiExtractor ─────────────────────────
+// SpotifyExtractor has no audio of its own — it needs a "bridge" function to
+// find the audio on YouTube. We provide createStream which searches YouTube via
+// discord-player (which routes through YoutubeiExtractor) and returns the YT URL.
+// discord-player then streams that YT URL with YoutubeiExtractor's IOS client.
 async function bridgeViaYoutubei(extractor, track) {
   const query = `${track.title} ${track.author}`.trim();
   try {
-    const player = useMainPlayer();
-    const result = await player.search(query, {
+    const p = useMainPlayer();
+    const result = await p.search(query, {
       searchEngine: QueryType.YOUTUBE_SEARCH,
     });
     if (!result || result.tracks.length === 0) {
-      throw new Error(`No YouTube results found for: ${query}`);
+      throw new Error(`No YouTube results for: ${query}`);
     }
-    // Return the YouTube URL — discord-player will stream it via YoutubeExtractor (youtubei)
     return result.tracks[0].url;
   } catch (err) {
-    console.error(`[Bridge] Failed to bridge "${query}":`, err.message);
+    console.error(`[Bridge] "${query}": ${err.message}`);
     throw err;
   }
 }
 
-// ─── Extractor init ───────────────────────────────────────────────────────────
+// ─── Extractors ───────────────────────────────────────────────────────────────
 async function initExtractors() {
-  // 1. Register YoutubeExtractor from youtubei FIRST — it handles all YT streaming
-  await player.extractors.register(YoutubeExtractor, {});
-  console.log("✅ YoutubeExtractor (youtubei) loaded");
+  // 1. YoutubeiExtractor v2.0.0 — uses IOS client, no PoToken needed, works on Render
+  await player.extractors.register(YoutubeiExtractor, {
+    streamOptions: {
+      useClient: "IOS", // IOS client works on datacenter IPs without PoToken
+    },
+  });
+  console.log("✅ YoutubeiExtractor (IOS client) loaded");
 
-  // 2. Register Spotify with a custom createStream that bridges via youtubei
-  //    This bypasses the broken defaultBridgeProvider which needs old YoutubeExtractor.instance
+  // 2. Spotify — metadata from Spotify API, audio bridged via YoutubeiExtractor
   await player.extractors.register(SpotifyExtractor, {
     clientId: process.env.SPOTIFY_CLIENT_ID,
     clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
     createStream: bridgeViaYoutubei,
   });
-  console.log("✅ SpotifyExtractor loaded (with youtubei bridge)");
+  console.log("✅ SpotifyExtractor loaded");
 
-  // 3. Register AppleMusic with same bridge
+  // 3. Apple Music — same bridge pattern as Spotify
   await player.extractors.register(AppleMusicExtractor, {
     createStream: bridgeViaYoutubei,
   });
-  console.log("✅ AppleMusicExtractor loaded (with youtubei bridge)");
+  console.log("✅ AppleMusicExtractor loaded");
 
-  // 4. Register SoundCloud (streams directly, no bridge needed)
+  // 4. SoundCloud — streams directly, no bridge needed
   await player.extractors.register(SoundCloudExtractor, {});
   console.log("✅ SoundCloudExtractor loaded");
 
-  // 5. Load remaining extractors (Attachment etc), skip the ones we already loaded
+  // 5. Remaining extractors (Attachment etc.) — skip ones already loaded above
+  //    Also skip old YouTubeExtractor — it uses play-dl which is broken on Render
   await player.extractors.loadDefault(
     (ext) =>
-      ext !== "YouTubeExtractor" && // old YT extractor (uses broken play-dl)
-      ext !== "YoutubeExtractor" && // alias
-      ext !== "SpotifyExtractor" && // already loaded above
-      ext !== "AppleMusicExtractor" && // already loaded above
-      ext !== "SoundCloudExtractor", // already loaded above
+      ext !== "YouTubeExtractor" &&
+      ext !== "YoutubeExtractor" &&
+      ext !== "SpotifyExtractor" &&
+      ext !== "AppleMusicExtractor" &&
+      ext !== "SoundCloudExtractor",
   );
   console.log("✅ Remaining extractors loaded");
 }
 
-// ─── Boot ─────────────────────────────────────────────────────────────────────
+// ─── Boot (extractors BEFORE login — no race condition) ──────────────────────
 async function boot() {
   try {
     await initExtractors();
@@ -131,7 +133,6 @@ async function boot() {
     console.error("DISCORD_TOKEN not set in .env!");
     process.exit(1);
   }
-
   client.login(token).catch((err) => {
     console.error("Failed to login:", err.message);
     process.exit(1);
