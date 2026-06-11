@@ -35,7 +35,7 @@ const client = new Client({
 
 // ─── Player ───────────────────────────────────────────────────────────────────
 const player = new Player(client, {
-  skipOnNoStream: false,
+  skipOnNoStream: true,
 });
 
 // ─── Spotify/AppleMusic bridge via YoutubeiExtractor ─────────────────────────
@@ -53,7 +53,11 @@ async function bridgeViaYoutubei(extractor, track) {
     if (!result || result.tracks.length === 0) {
       throw new Error(`No YouTube results for: ${query}`);
     }
-    return result.tracks[0].url;
+    for (let i = 0; i < Math.min(3, result.tracks.length); i++) {
+      const url = result.tracks[i].url;
+      if (url) return url;
+    }
+    throw new Error(`No streamable URL found for: ${query}`);
   } catch (err) {
     console.error(`[Bridge] "${query}": ${err.message}`);
     throw err;
@@ -62,6 +66,32 @@ async function bridgeViaYoutubei(extractor, track) {
 
 // ─── Extractors ───────────────────────────────────────────────────────────────
 async function initExtractors() {
+  // Parse OAuth tokens from env if present
+  const oauthTokens = process.env.YOUTUBEI_OAUTH_TOKENS
+    ? JSON.parse(process.env.YOUTUBEI_OAUTH_TOKENS)
+    : undefined;
+
+  if (oauthTokens) {
+    // OAuth mode: WEB client with tokens — most reliable, works on Render
+    await player.extractors.register(YoutubeiExtractor, {
+      authentication: oauthTokens,
+      streamOptions: {
+        useClient: "WEB",
+      },
+    });
+    console.log("✅ YoutubeiExtractor (WEB + OAuth) loaded");
+  } else {
+    // Fallback: ANDROID is more resilient than IOS on datacenter IPs
+    await player.extractors.register(YoutubeiExtractor, {
+      streamOptions: {
+        useClient: "ANDROID",
+      },
+    });
+    console.log(
+      "⚠️  YoutubeiExtractor (ANDROID, no OAuth) — may be rate-limited on Render",
+    );
+  }
+
   // 1. YoutubeiExtractor v2.0.0 — uses IOS client, no PoToken needed, works on Render
   await player.extractors.register(YoutubeiExtractor, {
     streamOptions: {

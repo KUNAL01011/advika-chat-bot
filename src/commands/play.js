@@ -101,7 +101,7 @@ module.exports = {
         leaveOnStop: false,
         selfDeaf: true,
         volume: 80,
-        skipOnNoStream: false,
+        skipOnNoStream: true,
         bufferingTimeout: 3000,
         connectionTimeout: 20_000,
       });
