@@ -34,10 +34,12 @@ const player = new Player(client, {
 async function initExtractors() {
   await player.extractors.register(YoutubeExtractor, {
     streamOptions: {
-      useClient: "TV",
+      useClient: "ANDROID",
     },
   });
   console.log("✅ YoutubeExtractor v3 loaded");
+  console.log("Spotify ID set:", !!process.env.SPOTIFY_CLIENT_ID);
+  console.log("Spotify Secret set:", !!process.env.SPOTIFY_CLIENT_SECRET);
 
   await player.extractors.loadDefault((ext) => ext !== "YouTubeExtractor", {
     SpotifyExtractor: {
