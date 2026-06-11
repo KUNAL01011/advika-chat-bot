@@ -69,10 +69,57 @@ module.exports = {
       }
 
       // ── Search ────────────────────────────────────────────────────────────
-      const searchResult = await player.search(searchQuery, {
+      let searchResult = await player.search(searchQuery, {
         requestedBy: message.author,
         searchEngine: queryType,
       });
+
+      // YouTube Playlist fallback due to youtubei.js ContinuationItemView bug
+      if ((!searchResult || searchResult.tracks.length === 0) && isUrl) {
+        try {
+          const url = new URL(searchQuery);
+          const host = url.hostname.replace("www.", "");
+          if ((host === "youtube.com" || host === "youtu.be") && url.searchParams.has("list")) {
+            const listId = url.searchParams.get("list");
+            const ytSearch = require("yt-search");
+            const ytResult = await ytSearch({ listId });
+            
+            if (ytResult && ytResult.videos && ytResult.videos.length > 0) {
+              const playlist = new Playlist(player, {
+                  title: ytResult.title || "YouTube Playlist",
+                  tracks: [],
+                  author: { name: ytResult.author?.name || "YouTube" },
+                  description: ytResult.title,
+                  thumbnail: ytResult.image || ytResult.thumbnail,
+                  type: "playlist",
+                  source: "youtube",
+                  id: listId,
+                  url: searchQuery
+              });
+              
+              const tracks = ytResult.videos.map(v => new Track(player, {
+                  title: v.title,
+                  url: `https://youtube.com/watch?v=${v.videoId}`,
+                  source: "youtube",
+                  duration: v.timestamp || "0:00",
+                  thumbnail: v.thumbnail,
+                  author: v.author?.name || "YouTube",
+                  requestedBy: message.author,
+                  playlist: playlist
+              }));
+              playlist.tracks = tracks;
+              
+              searchResult = {
+                  playlist: playlist,
+                  tracks: tracks,
+                  hasTracks: () => true
+              };
+            }
+          }
+        } catch (e) {
+          console.error("YouTube Playlist fallback error:", e.message);
+        }
+      }
 
       if (!searchResult || searchResult.tracks.length === 0) {
         return loadingMsg.edit(
