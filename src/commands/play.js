@@ -58,7 +58,7 @@ module.exports = {
         url.pathname === "/playlist" &&
         url.searchParams.has("list")
       ) {
-        queryType = QueryType.YOUTUBE_PLAYLIST;
+        queryType = QueryType.AUTO;
       } else if (query.includes("youtube.com") || query.includes("youtu.be")) {
         queryType = QueryType.YOUTUBE_VIDEO;
       } else {
