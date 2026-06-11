@@ -49,30 +49,20 @@ module.exports = {
         const url = new URL(query);
         const host = url.hostname.replace("www.", "");
 
+        // Let extractors handle all URLs automatically via AUTO
+        queryType = QueryType.AUTO;
+
         if (host === "youtube.com" || host === "youtu.be") {
           const hasVideo = url.searchParams.has("v");
           const hasList = url.searchParams.has("list");
-          const isPlaylistOnly = url.pathname === "/playlist" && hasList;
 
-          if (isPlaylistOnly) {
-            // Pure playlist URL: youtube.com/playlist?list=xxx
-            queryType = QueryType.YOUTUBE_PLAYLIST;
-          } else if (hasVideo && hasList) {
+          if (hasVideo && hasList) {
             // Video-in-playlist URL: strip &list= to play just the video
-            // Avoids youtubei mis-classifying it as a playlist
+            // Avoids queuing the whole playlist when a specific video was linked
             url.searchParams.delete("list");
             searchQuery = url.toString();
-            queryType = QueryType.YOUTUBE_VIDEO;
-          } else {
-            queryType = QueryType.YOUTUBE_VIDEO;
           }
-        } else if (host === "open.spotify.com" || host === "spotify.com") {
-          // AUTO lets SpotifyExtractor claim it; createStream handles audio bridge
-          queryType = QueryType.AUTO;
-        } else if (host === "soundcloud.com") {
-          queryType = QueryType.SOUNDCLOUD_TRACK;
         }
-        // else: AUTO handles everything else
       } else {
         // Plain text — search YouTube directly
         queryType = QueryType.YOUTUBE_SEARCH;

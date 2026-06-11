@@ -43,7 +43,7 @@ const player = new Player(client, {
 // find the audio on YouTube. We provide createStream which searches YouTube via
 // discord-player (which routes through YoutubeiExtractor) and returns the YT URL.
 // discord-player then streams that YT URL with YoutubeiExtractor's IOS client.
-async function bridgeViaYoutubei(extractor, track) {
+async function bridgeViaYoutubei(ext, url, track) {
   const query = `${track.title} ${track.author}`.trim();
   try {
     const p = useMainPlayer();
@@ -54,8 +54,8 @@ async function bridgeViaYoutubei(extractor, track) {
       throw new Error(`No YouTube results for: ${query}`);
     }
     for (let i = 0; i < Math.min(3, result.tracks.length); i++) {
-      const url = result.tracks[i].url;
-      if (url) return url;
+      const u = result.tracks[i].url;
+      if (u) return u;
     }
     throw new Error(`No streamable URL found for: ${query}`);
   } catch (err) {
