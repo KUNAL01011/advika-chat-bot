@@ -54,10 +54,15 @@ function registerPlayerEvents(player) {
   // Player errors
   player.events.on("playerError", (queue, error) => {
     console.error(`[PlayerError] Guild ${queue.guild.id}:`, error.message);
+    console.error(
+      `[PlayerError] Track:`,
+      queue.currentTrack?.title,
+      "| URL:",
+      queue.currentTrack?.url,
+    );
+    console.error(`[PlayerError] Extractor:`, queue.currentTrack?.extractor);
     const channel = queue.metadata?.channel;
-    channel
-      ?.send(`⚠️ Playback error, skipping to next track...`)
-      .catch(() => {});
+    channel?.send(`⚠️ Playback error: \`${error.message}\``).catch(() => {});
   });
 
   player.events.on("error", (queue, error) => {
