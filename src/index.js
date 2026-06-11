@@ -1,12 +1,4 @@
 // src/index.js
-
-// ─── Shim discord-voip → @discordjs/voice (fixes UDP timeout on Windows) ──────
-// ─── Shim discord-voip → @discordjs/voice ────────────────────────────────────
-const Module = require("module");
-const _originalLoad = Module._load.bind(Module);
-Module._load = (req, ...args) =>
-  _originalLoad(req === "discord-voip" ? "@discordjs/voice" : req, ...args);
-
 require("dotenv").config();
 
 process.env.FFMPEG_PATH = require("ffmpeg-static");
@@ -61,7 +53,6 @@ registerPlayerEvents(player);
 client.player = player;
 
 // ─── Discord Events ───────────────────────────────────────────────────────────
-// Use 'clientReady' (v14 forward-compat, suppresses deprecation warning)
 client.once("clientReady", (...args) => readyEvent.execute(...args));
 
 client.on(messageCreateEvent.name, (...args) =>
