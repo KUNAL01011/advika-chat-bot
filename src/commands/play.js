@@ -35,25 +35,33 @@ module.exports = {
       // Detect query type so we route to the RIGHT extractor
       // instead of letting Spotify extractor grab plain text searches
       let queryType;
-      if (query.includes("spotify.com")) {
-        if (query.includes("/playlist/")) {
-          queryType = QueryType.SPOTIFY_PLAYLIST;
-        } else if (query.includes("/album/")) {
-          queryType = QueryType.SPOTIFY_ALBUM; // was SPOTIFY_PLAYLIST — wrong
-        } else {
-          queryType = QueryType.SPOTIFY_SONG;
+      const url = (() => {
+        try {
+          return new URL(query);
+        } catch {
+          return null;
         }
+      })();
+
+      if (query.includes("spotify.com")) {
+        if (query.includes("/playlist/"))
+          queryType = QueryType.SPOTIFY_PLAYLIST;
+        else if (query.includes("/album/")) queryType = QueryType.SPOTIFY_ALBUM;
+        else if (query.includes("/track/")) queryType = QueryType.SPOTIFY_SONG;
+        else queryType = QueryType.SPOTIFY_SONG;
       } else if (query.includes("soundcloud.com")) {
         queryType = QueryType.SOUNDCLOUD_TRACK;
       } else if (
-        query.includes("youtube.com/playlist") ||
-        query.includes("list=")
+        url &&
+        (url.hostname === "www.youtube.com" ||
+          url.hostname === "youtube.com") &&
+        url.pathname === "/playlist" &&
+        url.searchParams.has("list")
       ) {
         queryType = QueryType.YOUTUBE_PLAYLIST;
       } else if (query.includes("youtube.com") || query.includes("youtu.be")) {
         queryType = QueryType.YOUTUBE_VIDEO;
       } else {
-        // Plain text — force YouTube search directly
         queryType = QueryType.YOUTUBE_SEARCH;
       }
 
@@ -98,7 +106,7 @@ module.exports = {
 
       // Add tracks to queue
       if (searchResult.playlist) {
-        const tracks = searchResult.tracks.slice(0, 100); 
+        const tracks = searchResult.tracks.slice(0, 100);
         queue.addTrack(tracks);
       } else {
         queue.addTrack(searchResult.tracks[0]);
