@@ -1,0 +1,62 @@
+# Aurix Music Bot
+
+A Discord music bot powered by discord-player v6 + YoutubeiExtractor.
+Multi-VC, 24/7, hosted on Render free tier.
+
+## Setup
+
+```bash
+npm install
+cp .env.example .env
+# Fill in your DISCORD_TOKEN in .env
+npm start
+```
+
+## Features
+
+- YouTube, Spotify, SoundCloud, Apple Music
+- YouTube playlist queueing (up to 100 tracks)
+- 24/7 VC mode (bot stays even when queue is empty)
+- Multiple VCs simultaneously across different servers
+- Loop track / loop queue / autoplay
+- Shuffle, remove, clear queue
+- Volume control + progress bar
+
+## Commands
+
+| Command           | Aliases      | Description                  |
+| ----------------- | ------------ | ---------------------------- |
+| `!play <query>`   | `!p`         | Play song or playlist        |
+| `!skip`           | `!s` `!next` | Skip current track           |
+| `!pause`          | —            | Pause playback               |
+| `!resume`         | `!r`         | Resume playback              |
+| `!stop`           | —            | Stop + clear queue           |
+| `!dc`             | `!leave`     | Disconnect from VC           |
+| `!join`           | `!j`         | Join VC (24/7 mode)          |
+| `!queue`          | `!q`         | Show queue                   |
+| `!nowplaying`     | `!np`        | Current track + progress bar |
+| `!volume <0-100>` | `!vol`       | Set volume                   |
+| `!loop`           | `!repeat`    | Toggle track loop            |
+| `!loop queue`     | —            | Loop entire queue            |
+| `!loop autoplay`  | —            | Autoplay related songs       |
+| `!loop off`       | —            | Disable looping              |
+| `!shuffle`        | —            | Shuffle queue                |
+| `!remove <pos>`   | `!rm`        | Remove track by position     |
+| `!clear`          | —            | Clear queue                  |
+| `!help`           | `!h`         | Show all commands            |
+
+## Folder Structure
+
+```
+src/
+  index.js              # Entry point, player setup
+  events/
+    ready.js            # Bot ready event
+    messageCreate.js    # Command router
+    playerEvents.js     # Now Playing, Queue End, errors
+  commands/
+    play.js             # !play command
+    controls.js         # All other commands
+  utils/
+    keepAlive.js        # Express server + cron for Render
+```

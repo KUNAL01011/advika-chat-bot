@@ -1,0 +1,23 @@
+# render.yaml — Deploy config for Render.com
+# Render auto-detects this file and uses it for deployment settings
+
+services:
+  - type: web
+    name: discord-music-bot
+    env: node
+    buildCommand: npm install --ignore-scripts
+    startCommand: npm start
+    plan: free
+
+    # Environment variables — set these in Render dashboard
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false          # Set manually in Render dashboard (secret)
+      - key: CLIENT_ID
+        sync: false
+      - key: PREFIX
+        value: "!"
+      - key: RENDER_URL
+        sync: false          # Set to your Render URL after first deploy
+      - key: NODE_ENV
+        value: production
