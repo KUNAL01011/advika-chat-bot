@@ -39,7 +39,7 @@ async function initExtractors() {
   });
   console.log("✅ YoutubeExtractor v3 loaded");
 
-  await player.extractors.loadDefault((ext) => ext !== "YouTubeExtractor");
+  await player.extractors.loadDefault();
   console.log(
     "✅ Other extractors loaded (Spotify, SoundCloud, Apple Music...)",
   );

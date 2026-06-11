@@ -36,13 +36,15 @@ module.exports = {
       // instead of letting Spotify extractor grab plain text searches
       let queryType;
       if (query.includes("spotify.com")) {
-        if (query.includes("/playlist/") || query.includes("/album/")) {
+        if (query.includes("/playlist/")) {
           queryType = QueryType.SPOTIFY_PLAYLIST;
+        } else if (query.includes("/album/")) {
+          queryType = QueryType.SPOTIFY_ALBUM; // was SPOTIFY_PLAYLIST — wrong
         } else {
           queryType = QueryType.SPOTIFY_SONG;
         }
       } else if (query.includes("soundcloud.com")) {
-        queryType = QueryType.SOUNDCLOUD_SEARCH;
+        queryType = QueryType.SOUNDCLOUD_TRACK;
       } else if (
         query.includes("youtube.com/playlist") ||
         query.includes("list=")
@@ -96,7 +98,8 @@ module.exports = {
 
       // Add tracks to queue
       if (searchResult.playlist) {
-        queue.addTrack(searchResult.tracks);
+        const tracks = searchResult.tracks.slice(0, 100); 
+        queue.addTrack(tracks);
       } else {
         queue.addTrack(searchResult.tracks[0]);
       }
