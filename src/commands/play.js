@@ -1,5 +1,5 @@
 // src/commands/play.js
-const { useMainPlayer, useQueue, QueryType } = require("discord-player");
+const { useMainPlayer, QueryType } = require("discord-player");
 
 module.exports = {
   name: "play",
@@ -32,40 +32,77 @@ module.exports = {
     try {
       const player = useMainPlayer();
 
-      // Detect query type so we route to the RIGHT extractor
-      // instead of letting Spotify extractor grab plain text searches
+      // ── Query type detection ────────────────────────────────────────────────
+      // FIX: The previous code used QueryType.AUTO for YouTube playlists which is
+      // unreliable on Render. We now use explicit types everywhere.
+      //
+      // The KEY fix for Spotify: do NOT use QueryType.SPOTIFY_* — just let
+      // QueryType.AUTO handle Spotify URLs. The SpotifyExtractor resolves the
+      // metadata and then discord-player-youtubei handles the bridge streaming.
+      // Passing explicit Spotify QueryTypes can bypass the extractor routing.
+      //
+      // FIX for YouTube playlists with &list= in the URL:
+      // discord-player-youtubei issue #13 — a URL like /watch?v=xxx&list=yyy is
+      // mis-classified as youtubePlaylist by QueryResolver. We strip the &list=
+      // param from single video URLs to avoid this.
+
+      let searchQuery = query;
       let queryType;
-      const url = (() => {
+
+      const isUrl = (() => {
         try {
-          return new URL(query);
+          new URL(query);
+          return true;
         } catch {
-          return null;
+          return false;
         }
       })();
 
-      if (query.includes("spotify.com")) {
-        if (query.includes("/playlist/"))
-          queryType = QueryType.SPOTIFY_PLAYLIST;
-        else if (query.includes("/album/")) queryType = QueryType.SPOTIFY_ALBUM;
-        else if (query.includes("/track/")) queryType = QueryType.SPOTIFY_SONG;
-        else queryType = QueryType.SPOTIFY_SONG;
-      } else if (query.includes("soundcloud.com")) {
-        queryType = QueryType.SOUNDCLOUD_TRACK;
-      } else if (
-        url &&
-        (url.hostname === "www.youtube.com" ||
-          url.hostname === "youtube.com") &&
-        url.pathname === "/playlist" &&
-        url.searchParams.has("list")
-      ) {
-        queryType = QueryType.AUTO;
-      } else if (query.includes("youtube.com") || query.includes("youtu.be")) {
-        queryType = QueryType.YOUTUBE_VIDEO;
+      if (isUrl) {
+        const url = new URL(query);
+        const hostname = url.hostname.replace("www.", "");
+
+        if (hostname === "youtube.com" || hostname === "youtu.be") {
+          const isPlaylistOnly =
+            url.pathname === "/playlist" && url.searchParams.has("list");
+          const isVideoInPlaylist =
+            url.searchParams.has("v") && url.searchParams.has("list");
+
+          if (isPlaylistOnly) {
+            // Pure playlist URL — use AUTO so youtubei handles it fully
+            queryType = QueryType.AUTO;
+          } else if (isVideoInPlaylist) {
+            // FIX: Strip &list= param — play just the video, not the whole
+            // playlist. This avoids the youtubePlaylist mis-classification bug
+            // in discord-player-youtubei. User can paste the playlist URL
+            // directly if they want the whole thing.
+            url.searchParams.delete("list");
+            searchQuery = url.toString();
+            queryType = QueryType.YOUTUBE_VIDEO;
+          } else {
+            // Clean video URL
+            queryType = QueryType.YOUTUBE_VIDEO;
+          }
+        } else if (
+          hostname === "open.spotify.com" ||
+          hostname === "spotify.com"
+        ) {
+          // FIX: Use AUTO for Spotify — this lets the SpotifyExtractor claim the
+          // track/playlist metadata, then routes audio via YoutubeExtractor bridge.
+          // Using explicit SPOTIFY_SONG / SPOTIFY_PLAYLIST can cause routing issues
+          // where discord-player skips the bridge and tries play-dl directly.
+          queryType = QueryType.AUTO;
+        } else if (hostname === "soundcloud.com") {
+          queryType = QueryType.SOUNDCLOUD_TRACK;
+        } else {
+          queryType = QueryType.AUTO;
+        }
       } else {
+        // Plain text search → always go straight to YouTube search via youtubei
         queryType = QueryType.YOUTUBE_SEARCH;
       }
 
-      const searchResult = await player.search(query, {
+      const searchResult = await player.search(searchQuery, {
         requestedBy: message.author,
         searchEngine: queryType,
       });
@@ -76,7 +113,7 @@ module.exports = {
         );
       }
 
-      // Get or create the queue for this guild
+      // ── Get or create queue ─────────────────────────────────────────────────
       const queue = player.nodes.create(message.guild, {
         metadata: {
           channel: message.channel,
@@ -87,8 +124,8 @@ module.exports = {
         leaveOnStop: false,
         selfDeaf: true,
         volume: 80,
-        skipOnNoStream: false, // 🔴 CHANGED: was true, was silently eating errors
-        bufferingTimeout: 3000, // give stream 3s to buffer before giving up
+        skipOnNoStream: false,
+        bufferingTimeout: 3000,
         connectionTimeout: 20_000,
       });
 
@@ -104,25 +141,14 @@ module.exports = {
         }
       }
 
-      // Add tracks to queue
+      // ── Add tracks ─────────────────────────────────────────────────────────
+      // FIX: REMOVED the re-search loop entirely. That loop did 50 sequential
+      // YouTube searches (~30s total) which killed Render's free instance.
+      // discord-player-youtubei handles bridging internally — just addTrack()
+      // directly. The extractor lazily resolves the stream URL when it's time
+      // to actually play, not when adding to queue.
       if (searchResult.playlist) {
-        // Re-resolve each track through youtubei so streaming goes through youtubei not play-dl
-        const resolvedTracks = [];
-        for (const track of searchResult.tracks.slice(0, 50)) {
-          try {
-            const r = await player.search(`${track.title} ${track.author}`, {
-              requestedBy: message.author,
-              searchEngine: QueryType.YOUTUBE_SEARCH,
-            });
-            if (r.tracks[0]) resolvedTracks.push(r.tracks[0]);
-          } catch {}
-        }
-        if (resolvedTracks.length === 0) {
-          return loadingMsg.edit(
-            `❌ Could not resolve any tracks from playlist.`,
-          );
-        }
-        queue.addTrack(resolvedTracks);
+        queue.addTrack(searchResult.tracks);
       } else {
         queue.addTrack(searchResult.tracks[0]);
       }
@@ -132,17 +158,17 @@ module.exports = {
         await queue.node.play();
       }
 
-      // Reply
+      // ── Reply ───────────────────────────────────────────────────────────────
       if (searchResult.playlist) {
         await loadingMsg.edit(
-          `✅ Added **${searchResult.tracks.length} tracks** from playlist!\n` +
+          `✅ Added **${searchResult.tracks.length} tracks** from **${searchResult.playlist.title}**!\n` +
             `🎵 First: **${searchResult.tracks[0].title}** — \`${searchResult.tracks[0].duration}\``,
         );
       } else {
         const track = searchResult.tracks[0];
         const isQueued =
-          queue.tracks.size > 0 || queue.currentTrack?.title !== track.title;
-        if (isQueued && queue.currentTrack) {
+          queue.currentTrack && queue.currentTrack.url !== track.url;
+        if (isQueued) {
           await loadingMsg.edit(
             `✅ Added to queue: **${track.title}** — \`${track.duration}\`\n` +
               `📋 Position: **#${queue.tracks.size}**`,
@@ -155,9 +181,9 @@ module.exports = {
       }
     } catch (err) {
       console.error("[Play Command Error]", err);
-      await loadingMsg.edit(
-        `❌ Error: ${err.message || "Something went wrong."}`,
-      );
+      await loadingMsg
+        .edit(`❌ Error: ${err.message || "Something went wrong."}`)
+        .catch(() => {});
     }
   },
 };
