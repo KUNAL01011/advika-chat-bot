@@ -5,14 +5,16 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "node --watch src/index.js",
+    "postinstall": "node -e \"require('fs').writeFileSync('./node_modules/discord-voip/dist/index.js', 'module.exports = require(\\\"@discordjs/voice\\\");')\""
   },
   "dependencies": {
     "@discord-player/extractor": "^4.5.0",
     "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.19.2",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "bgutils-js": "^3.2.0",
-    "discord-player": "^6.7.1",
+    "discord-player": "^6.6.10",
     "discord-player-youtubei": "^3.0.0-beta.4",
     "discord.js": "^14.15.0",
     "dotenv": "^17.4.2",
