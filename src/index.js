@@ -7,8 +7,16 @@ const dns = require("node:dns");
 dns.setDefaultResultOrder("ipv4first");
 
 const { Client, GatewayIntentBits, Partials } = require("discord.js");
-const { Player } = require("discord-player");
-const { YoutubeExtractor } = require("discord-player-youtubei"); // ✅ correct export name
+const { Player, QueryType, useMainPlayer } = require("discord-player");
+const {
+  YoutubeExtractor,
+  search: youtubeiSearch,
+} = require("discord-player-youtubei");
+const {
+  SpotifyExtractor,
+  AppleMusicExtractor,
+  SoundCloudExtractor,
+} = require("@discord-player/extractor");
 const { startKeepAlive } = require("./utils/keepAlive");
 const { registerPlayerEvents } = require("./events/playerEvents");
 
@@ -31,70 +39,77 @@ const player = new Player(client, {
   skipOnNoStream: false,
 });
 
-// ─── Extractor Init ───────────────────────────────────────────────────────────
-// FIX: We await extractors BEFORE client.login() so every extractor is ready
-// before the first !play command can arrive. Previously this ran in the background
-// so a race condition could leave SpotifyExtractor or YoutubeExtractor missing.
+// ─── Bridge stream function ───────────────────────────────────────────────────
+// This is used by SpotifyExtractor (and AppleMusic) to stream audio.
+// Instead of using the broken bridge (which checks for old YoutubeExtractor.instance),
+// we manually search YouTube using youtubei and return the YT track URL.
+// discord-player then picks it up and YoutubeExtractor (youtubei) streams it natively.
+async function bridgeViaYoutubei(extractor, track) {
+  const query = `${track.title} ${track.author}`.trim();
+  try {
+    const player = useMainPlayer();
+    const result = await player.search(query, {
+      searchEngine: QueryType.YOUTUBE_SEARCH,
+    });
+    if (!result || result.tracks.length === 0) {
+      throw new Error(`No YouTube results found for: ${query}`);
+    }
+    // Return the YouTube URL — discord-player will stream it via YoutubeExtractor (youtubei)
+    return result.tracks[0].url;
+  } catch (err) {
+    console.error(`[Bridge] Failed to bridge "${query}":`, err.message);
+    throw err;
+  }
+}
+
+// ─── Extractor init ───────────────────────────────────────────────────────────
 async function initExtractors() {
-  // FIX: YoutubeExtractor from discord-player-youtubei MUST be registered first
-  // so it takes over bridging from Spotify/Apple Music. If loaded after, the
-  // built-in @discord-player/extractor YouTubeExtractor wins the bridge and
-  // uses play-dl which fails on Render with ERR_NO_RESULT.
-  await player.extractors.register(YoutubeExtractor, {
-    streamOptions: {
-      useClient: "WEB",
-    },
-    // FIX: overrideBridgeMode forces youtubei to handle ALL bridge streaming
-    // (Spotify, Apple Music etc.) even without OAuth. Without this the extractor
-    // falls back to YouTube Music which is unavailable on server environments.
-    overrideBridgeMode: "ytdl",
-  });
+  // 1. Register YoutubeExtractor from youtubei FIRST — it handles all YT streaming
+  await player.extractors.register(YoutubeExtractor, {});
   console.log("✅ YoutubeExtractor (youtubei) loaded");
 
-  // FIX: blockStreamFrom tells discord-player that these extractors should NEVER
-  // stream audio themselves — they only fetch metadata. Actual audio always goes
-  // through YoutubeExtractor above which uses youtubei (not play-dl).
-  // Without this, SpotifyExtractor tries to stream via its own YouTube bridge
-  // (play-dl) and fails on Render with ERR_NO_RESULT.
-  const {
-    SpotifyExtractor,
-    AppleMusicExtractor,
-    SoundCloudExtractor,
-  } = require("@discord-player/extractor");
-
+  // 2. Register Spotify with a custom createStream that bridges via youtubei
+  //    This bypasses the broken defaultBridgeProvider which needs old YoutubeExtractor.instance
   await player.extractors.register(SpotifyExtractor, {
     clientId: process.env.SPOTIFY_CLIENT_ID,
     clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
+    createStream: bridgeViaYoutubei,
   });
-  console.log("✅ SpotifyExtractor loaded");
+  console.log("✅ SpotifyExtractor loaded (with youtubei bridge)");
 
-  // Load the rest (SoundCloud, attachment, etc.) but block them from streaming
-  // so youtubei handles the actual audio for all bridged sources.
+  // 3. Register AppleMusic with same bridge
+  await player.extractors.register(AppleMusicExtractor, {
+    createStream: bridgeViaYoutubei,
+  });
+  console.log("✅ AppleMusicExtractor loaded (with youtubei bridge)");
+
+  // 4. Register SoundCloud (streams directly, no bridge needed)
+  await player.extractors.register(SoundCloudExtractor, {});
+  console.log("✅ SoundCloudExtractor loaded");
+
+  // 5. Load remaining extractors (Attachment etc), skip the ones we already loaded
   await player.extractors.loadDefault(
     (ext) =>
-      ext !== "YouTubeExtractor" && // block built-in YT (uses play-dl)
-      ext !== "SpotifyExtractor", // already registered above
-    {
-      // No extra options needed; streaming is blocked via player options below
-    },
+      ext !== "YouTubeExtractor" && // old YT extractor (uses broken play-dl)
+      ext !== "YoutubeExtractor" && // alias
+      ext !== "SpotifyExtractor" && // already loaded above
+      ext !== "AppleMusicExtractor" && // already loaded above
+      ext !== "SoundCloudExtractor", // already loaded above
   );
-  console.log("✅ Other extractors loaded (SoundCloud, Apple Music...)");
+  console.log("✅ Remaining extractors loaded");
 }
 
-// ─── Boot sequence ────────────────────────────────────────────────────────────
-// FIX: extractors must be ready BEFORE login so no command races against init.
+// ─── Boot ─────────────────────────────────────────────────────────────────────
 async function boot() {
   try {
     await initExtractors();
   } catch (err) {
     console.error("❌ Extractor init failed:", err.message);
-    // Don't exit — single extractor failure shouldn't kill the whole bot.
   }
 
   registerPlayerEvents(player);
   client.player = player;
 
-  // ─── Discord Events ─────────────────────────────────────────────────────────
   client.once("clientReady", (...args) => readyEvent.execute(...args));
   client.on(messageCreateEvent.name, (...args) =>
     messageCreateEvent.execute(...args),
@@ -109,10 +124,8 @@ async function boot() {
     console.error("[Uncaught Exception]", err),
   );
 
-  // ─── Keep-Alive ─────────────────────────────────────────────────────────────
   startKeepAlive();
 
-  // ─── Login ──────────────────────────────────────────────────────────────────
   const token = process.env.DISCORD_TOKEN;
   if (!token) {
     console.error("DISCORD_TOKEN not set in .env!");
