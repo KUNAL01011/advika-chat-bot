@@ -38,8 +38,6 @@ async function initExtractors() {
     },
   });
   console.log("✅ YoutubeExtractor v3 loaded");
-  console.log("Spotify ID set:", !!process.env.SPOTIFY_CLIENT_ID);
-  console.log("Spotify Secret set:", !!process.env.SPOTIFY_CLIENT_SECRET);
 
   await player.extractors.loadDefault((ext) => ext !== "YouTubeExtractor", {
     SpotifyExtractor: {
@@ -47,9 +45,7 @@ async function initExtractors() {
       clientSecret: process.env.SPOTIFY_CLIENT_SECRET,
     },
   });
-  console.log(
-    "✅ Other extractors loaded (Spotify, SoundCloud, Apple Music...)",
-  );
+  console.log("✅ Other extractors loaded (Spotify, SoundCloud, Apple Music...)");
 }
 
 initExtractors().catch((err) => {

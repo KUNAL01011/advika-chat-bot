@@ -58,7 +58,7 @@ module.exports = {
         url.pathname === "/playlist" &&
         url.searchParams.has("list")
       ) {
-        queryType = QueryType.AUTO;
+        queryType = QueryType.YOUTUBE_PLAYLIST;
       } else if (query.includes("youtube.com") || query.includes("youtu.be")) {
         queryType = QueryType.YOUTUBE_VIDEO;
       } else {
@@ -106,8 +106,23 @@ module.exports = {
 
       // Add tracks to queue
       if (searchResult.playlist) {
-        const tracks = searchResult.tracks.slice(0, 100);
-        queue.addTrack(tracks);
+        // Re-resolve each track through youtubei so streaming goes through youtubei not play-dl
+        const resolvedTracks = [];
+        for (const track of searchResult.tracks.slice(0, 50)) {
+          try {
+            const r = await player.search(`${track.title} ${track.author}`, {
+              requestedBy: message.author,
+              searchEngine: QueryType.YOUTUBE_SEARCH,
+            });
+            if (r.tracks[0]) resolvedTracks.push(r.tracks[0]);
+          } catch {}
+        }
+        if (resolvedTracks.length === 0) {
+          return loadingMsg.edit(
+            `❌ Could not resolve any tracks from playlist.`,
+          );
+        }
+        queue.addTrack(resolvedTracks);
       } else {
         queue.addTrack(searchResult.tracks[0]);
       }
