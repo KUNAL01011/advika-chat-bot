@@ -60,3 +60,8 @@ src/
   utils/
     keepAlive.js        # Express server + cron for Render
 ```
+!play https://open.spotify.com/playlist/74va6gtweFPjNjRM8pLBbM
+!play https://open.spotify.com/track/2JzZzZUQj3Qff7wapcbKjc
+!play https://www.youtube.com/playlist?list=PL__GQ-SJLZE_zZruVwNS8xSeK6xYPAdh5
+!play https://www.youtube.com/watch?v=dQw4w9WgXcQ
+!play never gonna give you up
