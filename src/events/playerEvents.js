@@ -1,8 +1,29 @@
 export const setupPlayerEvents = (player) => {
-  player.on("debug", (message) => console.log(`[General Debug]: ${message}`));
-  player.events.on("debug", (queue, message) =>
-    console.log(`[Queue Debug]: ${message}`),
-  );
+  player.on("debug", (message) => {
+    if (
+      message.includes("extractor") ||
+      message.includes("Extractor") ||
+      message.includes("search") ||
+      message.includes("Search") ||
+      message.includes("stream") ||
+      message.includes("error") ||
+      message.includes("Error")
+    ) {
+      console.log(`[General Debug]: ${message}`); // <-- already here, just add the filter
+    }
+  });
+  player.events.on("debug", (queue, message) => {
+    if (
+      message.includes("extractor") ||
+      message.includes("Extractor") ||
+      message.includes("stream") ||
+      message.includes("error") ||
+      message.includes("Error")
+    ) {
+      console.log(`[Queue Debug]: ${message}`); // <-- already here, just add the filter
+    }
+  });
+  // ─────────────────────────────────────────────────────────────
 
   player.events.on("playerStart", (queue, track) => {
     queue.metadata.channel.send(`🎵 Now Playing: **${track.title}**`);
