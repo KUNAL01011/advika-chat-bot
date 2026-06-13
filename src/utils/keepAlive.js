@@ -1,6 +1,6 @@
-// src/utils/keepAlive.js
 import express from "express";
 import cron from "node-cron";
+import https from "https";
 
 function startKeepAlive() {
   const app = express();
@@ -17,12 +17,14 @@ function startKeepAlive() {
 
   app.get("/ping", (req, res) => res.send("pong"));
 
-  app.listen(PORT, () => console.log(`🌐 Keep-alive server on port ${PORT}`));
+  // Explicitly binding to 0.0.0.0 to prevent Render port detection timeouts
+  app.listen(PORT, "0.0.0.0", () =>
+    console.log(`🌐 Keep-alive server on port ${PORT}`),
+  );
 
   cron.schedule("*/14 * * * *", () => {
     const url = process.env.RENDER_URL;
     if (!url) return;
-    const https = require("https");
     const urlObj = new URL(url);
     const req = https.request(
       {
