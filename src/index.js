@@ -34,7 +34,7 @@ const player = new Player(client);
 const init = async () => {
   // Load Extractors
   await player.extractors.register(YoutubeExtractor, {
-    streamOptions: { useClient: "WEB" },
+    streamOptions: { useClient: "IOS" },
   });
   console.log("✅ YoutubeExtractor loaded");
 
