@@ -34,9 +34,10 @@ const player = new Player(client);
 const init = async () => {
   // Load Extractors
   await player.extractors.register(YoutubeExtractor, {
-    streamOptions: { useClient: "TV_EMBEDDED" },
+    authentication: process.env.YOUTUBE_OAUTH,
+    streamOptions: { useClient: "ANDROID" },
   });
-  console.log("✅ YoutubeExtractor loaded");
+  console.log("✅ YoutubeExtractor loaded with OAuth");
 
   // Setting up Spotify safely for future expansion
   await player.extractors.register(SpotifyExtractor, {
