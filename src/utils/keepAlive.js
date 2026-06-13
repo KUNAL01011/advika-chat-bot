@@ -1,6 +1,6 @@
 // src/utils/keepAlive.js
-const express = require("express");
-const cron = require("node-cron");
+import express from "express";
+import cron from "node-cron";
 
 function startKeepAlive() {
   const app = express();
@@ -46,4 +46,4 @@ function startKeepAlive() {
   console.log("Keep-alive cron scheduled (every 14 min)");
 }
 
-module.exports = { startKeepAlive };
+export { startKeepAlive };
