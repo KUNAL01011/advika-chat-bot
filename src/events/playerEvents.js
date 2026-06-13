@@ -1,4 +1,9 @@
 export const setupPlayerEvents = (player) => {
+  player.on("debug", (message) => console.log(`[General Debug]: ${message}`));
+  player.events.on("debug", (queue, message) =>
+    console.log(`[Queue Debug]: ${message}`),
+  );
+
   player.events.on("playerStart", (queue, track) => {
     queue.metadata.channel.send(`🎵 Now Playing: **${track.title}**`);
   });
