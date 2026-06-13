@@ -14,8 +14,7 @@ npm start
 
 ## Features
 
-- YouTube, Spotify, SoundCloud, Apple Music
-- YouTube playlist queueing (up to 100 tracks)
+- YouTube
 - 24/7 VC mode (bot stays even when queue is empty)
 - Multiple VCs simultaneously across different servers
 - Loop track / loop queue / autoplay
@@ -26,7 +25,7 @@ npm start
 
 | Command           | Aliases      | Description                  |
 | ----------------- | ------------ | ---------------------------- |
-| `!play <query>`   | `!p`         | Play song or playlist        |
+| `!play <query>`   | `!p`         | Play song         |
 | `!skip`           | `!s` `!next` | Skip current track           |
 | `!pause`          | —            | Pause playback               |
 | `!resume`         | `!r`         | Resume playback              |

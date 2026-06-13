@@ -1,40 +1,20 @@
-// src/events/messageCreate.js
-const playCommand = require('../commands/play');
-const controls = require('../commands/controls');
+import { executeCommand } from "../commands/music.js";
 
-// Build a flat map: commandName/alias → handler
-const commandMap = new Map();
+const PREFIX = "!";
 
-// Register play
-commandMap.set(playCommand.name, playCommand);
-playCommand.aliases?.forEach(a => commandMap.set(a, playCommand));
+export const handleMessage = async (message, player) => {
+  // Ignore bots and missing prefixes
+  if (message.author.bot || !message.content.startsWith(PREFIX)) return;
 
-// Register controls
-Object.values(controls).forEach(cmd => {
-  commandMap.set(cmd.name, cmd);
-  cmd.aliases?.forEach(a => commandMap.set(a, cmd));
-});
+  // Split content into args array and extract the base command
+  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+  const commandName = args.shift().toLowerCase();
 
-module.exports = {
-  name: 'messageCreate',
-  async execute(message) {
-    // Ignore bots and DMs
-    if (message.author.bot || !message.guild) return;
+  // Basic Utility Commands
+  if (commandName === "ping") {
+    return message.reply("Pong!");
+  }
 
-    const PREFIX = process.env.PREFIX || '!';
-    if (!message.content.startsWith(PREFIX)) return;
-
-    const args = message.content.slice(PREFIX.length).trim().split(/\s+/);
-    const commandName = args.shift().toLowerCase();
-
-    const command = commandMap.get(commandName);
-    if (!command) return;
-
-    try {
-      await command.execute(message, args);
-    } catch (err) {
-      console.error(`[Command Error] ${commandName}:`, err);
-      message.reply('❌ An error occurred while executing that command.').catch(() => {});
-    }
-  },
+  // Route to Music Logic
+  await executeCommand(commandName, message, args, player);
 };

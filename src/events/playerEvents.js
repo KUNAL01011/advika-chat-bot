@@ -1,48 +1,27 @@
-// src/events/playerEvents.js
-
-function registerPlayerEvents(player) {
+export const setupPlayerEvents = (player) => {
   player.events.on("playerStart", (queue, track) => {
-    const channel = queue.metadata?.channel;
-    if (!channel) return;
-    channel
-      .send(
-        `🎵 **Now Playing:** [${track.title}](${track.url})\n` +
-          `⏱ Duration: \`${track.duration}\` | 👤 Requested by: ${track.requestedBy?.tag || "Unknown"}`,
-      )
-      .catch(() => {});
+    queue.metadata.channel.send(`🎵 Now Playing: **${track.title}**`);
   });
 
-  // Suppressed: play.js reply handles the confirmation message
-  player.events.on("audioTrackAdd", () => {});
-  player.events.on("audioTracksAdd", () => {});
+  player.events.on("audioTrackAdd", (queue, track) => {
+    queue.metadata.channel.send(`📝 Track **${track.title}** queued!`);
+  });
+
+  player.events.on("disconnect", (queue) => {
+    queue.metadata.channel.send("👋 Disconnected from the voice channel.");
+  });
 
   player.events.on("emptyQueue", (queue) => {
-    const channel = queue.metadata?.channel;
-    if (!channel) return;
-    channel
-      .send(
-        "✅ Queue finished! Bot is still in VC.\n" +
-          "Add more songs with `!play <song>` or use `!dc` to disconnect.",
-      )
-      .catch(() => {});
-  });
-
-  player.events.on("playerError", (queue, error) => {
-    const track = queue.currentTrack;
-    console.error(
-      `[PlayerError] Guild: ${queue.guild.id} | Track: ${track?.title} | ${error.message}`,
+    queue.metadata.channel.send(
+      "Queue finished! Use `!play` to add more tracks. I'll stick around (24/7 mode).",
     );
-    const channel = queue.metadata?.channel;
-    channel
-      ?.send(
-        `⚠️ Couldn't play **${track?.title || "this track"}**: \`${error.message}\`\nSkipping...`,
-      )
-      .catch(() => {});
   });
 
   player.events.on("error", (queue, error) => {
-    console.error(`[QueueError] Guild: ${queue.guild?.id} | ${error.message}`);
+    console.error(`[Player Error]: ${error.message}`);
   });
-}
 
-module.exports = { registerPlayerEvents };
+  player.events.on("playerError", (queue, error) => {
+    console.error(`[Audio Error]: ${error.message}`);
+  });
+};
