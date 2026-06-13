@@ -36,7 +36,7 @@ const init = async () => {
   // Load Extractors
   await player.extractors.register(YoutubeiExtractor, {
     authentication: process.env.YOUTUBE_OAUTH,
-    streamOptions: { useClient: "ANDROID" },
+    streamOptions: { useClient: "WEB_EMBEDDED" },
   });
   console.log("✅ YoutubeiExtractor loaded with OAuth");
 
