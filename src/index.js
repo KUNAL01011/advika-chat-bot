@@ -3,7 +3,7 @@ dotenv.config();
 
 import { Client, GatewayIntentBits } from "discord.js";
 import { Player } from "discord-player";
-import { YoutubeExtractor } from "discord-player-youtubei";
+import { YoutubeiExtractor } from "discord-player-youtubei";
 import {
   SpotifyExtractor,
   SoundCloudExtractor,
@@ -34,11 +34,11 @@ const player = new Player(client);
 // ==========================================
 const init = async () => {
   // Load Extractors
-  await player.extractors.register(YoutubeExtractor, {
+  await player.extractors.register(YoutubeiExtractor, {
     authentication: process.env.YOUTUBE_OAUTH,
     streamOptions: { useClient: "ANDROID" },
   });
-  console.log("✅ YoutubeExtractor loaded with OAuth");
+  console.log("✅ YoutubeiExtractor loaded with OAuth");
 
   // Setting up Spotify safely for future expansion
   await player.extractors.register(SpotifyExtractor, {
