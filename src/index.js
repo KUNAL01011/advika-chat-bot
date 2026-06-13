@@ -7,6 +7,7 @@ import { YoutubeExtractor } from "discord-player-youtubei";
 import {
   SpotifyExtractor,
   SoundCloudExtractor,
+  AttachmentExtractor,
 } from "@discord-player/extractor";
 import ffmpeg from "ffmpeg-static";
 
@@ -48,6 +49,9 @@ const init = async () => {
 
   await player.extractors.register(SoundCloudExtractor, {});
   console.log("✅ SoundCloudExtractor loaded");
+
+  await player.extractors.register(AttachmentExtractor, {});
+  console.log("✅ AttachmentExtractor loaded");
 
   // Setup Event Listeners
   setupPlayerEvents(player);
