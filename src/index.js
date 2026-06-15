@@ -1,78 +1,69 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-import { Client, GatewayIntentBits } from "discord.js";
-import { Player } from "discord-player";
-import { YoutubeiExtractor } from "discord-player-youtubei";
-import {
-  SpotifyExtractor,
-  SoundCloudExtractor,
-  AttachmentExtractor,
-} from "@discord-player/extractor";
-import ffmpeg from "ffmpeg-static";
-
-// Adjust path if needed
+import { Client, GatewayIntentBits, ActivityType } from "discord.js";
+import { handleChatMessage } from "./events/messageCreate.js";
 import { startKeepAlive } from "./utils/keepAlive.js";
-import { setupPlayerEvents } from "./events/playerEvents.js";
-import { handleMessage } from "./events/messageCreate.js";
 
-process.env.FFMPEG_PATH = ffmpeg;
+// ─── Discord Client Setup ─────────────────────────────────────────────────────
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
-    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMembers,
   ],
 });
 
-const player = new Player(client);
+// ─── Event Handlers ───────────────────────────────────────────────────────────
 
-// ==========================================
-// BOOT SEQUENCE
-// ==========================================
-const init = async () => {
-  // Load Extractors
-  await player.extractors.register(YoutubeiExtractor, {
-    authentication: process.env.YOUTUBE_OAUTH,
-    streamOptions: { useClient: "TV_EMBEDDED" },
-  });
-  console.log("✅ YoutubeiExtractor loaded with OAuth");
+client.once("ready", () => {
+  console.log(`✅ Advika is online as ${client.user.tag}`);
 
-  // Setting up Spotify safely for future expansion
-  await player.extractors.register(SpotifyExtractor, {
-    clientId: process.env.SPOTIFY_CLIENT_ID || "",
-    clientSecret: process.env.SPOTIFY_CLIENT_SECRET || "",
-  });
-  console.log("✅ SpotifyExtractor loaded");
+  // Set a vibe-y status
+  const statuses = [
+    { name: "hum tum aur baatein 👀", type: ActivityType.Listening },
+    { name: "koi interesting baat karo", type: ActivityType.Watching },
+    { name: "dimag mat khao", type: ActivityType.Custom },
+  ];
 
-  await player.extractors.register(SoundCloudExtractor, {});
-  console.log("✅ SoundCloudExtractor loaded");
+  // Rotate status every 30 minutes
+  let statusIndex = 0;
+  const setStatus = () => {
+    const s = statuses[statusIndex % statuses.length];
+    client.user.setActivity(s.name, { type: s.type });
+    statusIndex++;
+  };
 
-  await player.extractors.register(AttachmentExtractor, {});
-  console.log("✅ AttachmentExtractor loaded");
+  setStatus();
+  setInterval(setStatus, 30 * 60 * 1000);
+});
 
-  // Setup Event Listeners
-  setupPlayerEvents(player);
+client.on("messageCreate", (message) => handleChatMessage(message, client));
 
-  client.once("clientReady", () => {
-    console.log(`✅ Logged in as ${client.user.tag}`);
-    client.user.setActivity("Kunal Kumar", { type: 3 });
+client.on("error", (error) => {
+  console.error("[Discord Error]:", error.message);
+});
 
-    startKeepAlive(); // Uncomment if your keepAlive file is set up
-  });
+process.on("unhandledRejection", (error) => {
+  console.error("[Unhandled Rejection]:", error);
+});
 
-  client.on("messageCreate", (message) => handleMessage(message, player));
-  client.on("error", console.error);
+// ─── Boot ─────────────────────────────────────────────────────────────────────
 
-  const token = process.env.DISCORD_TOKEN;
-  if (!token) {
-    console.error("❌ DISCORD_TOKEN not found in .env");
-    process.exit(1);
-  }
+const token = process.env.DISCORD_TOKEN;
+if (!token) {
+  console.error("❌ DISCORD_TOKEN not found in .env");
+  process.exit(1);
+}
 
-  client.login(token);
-};
+if (!process.env.GEMINI_API_KEY) {
+  console.error("❌ GEMINI_API_KEY not found in .env");
+  process.exit(1);
+}
 
-init();
+startKeepAlive();
+client.login(token);
+
+console.log("🚀 Advika booting up...");
