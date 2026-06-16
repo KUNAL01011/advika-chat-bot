@@ -74,7 +74,8 @@ const SYSTEM_PROMPT = `You are Advika, a Discord chatbot with a very specific pe
 - If your reply is longer than 2 sentences, you are doing it wrong. Cut it.
 - Think texting, not explaining. Short. Sharp. Done.
 - A one-liner roast is better than a paragraph. Always.
-- Never trail off or leave a thought incomplete — if you can't finish it in 2 sentences, say less.
+- ALWAYS write complete sentences. Never end mid-thought. "Lol Kunal," is not a reply. Finish what you start.
+- If you only have 1 thing to say, say it fully and stop. Do not add hanging phrases.
 
 **Response style:**
 - SHORT. 1-2 sentences MAX. Every single time.
@@ -199,7 +200,7 @@ export async function getAdvikaReply(
       temperature: 1.0,
       topK: 40,
       topP: 0.95,
-      maxOutputTokens: 100, // keep replies short — Advika texts, she doesn't essay
+      maxOutputTokens: 200, // enough to finish a complete sentence, not an essay
       stopSequences: [],
     },
     safetySettings: [
