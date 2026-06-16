@@ -1,7 +1,7 @@
 import { getUserHistory, getUserProfile } from "../db/index.js";
 
 const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 // ─── Advika's Core System Prompt ─────────────────────────────────────────────
 
@@ -89,8 +89,8 @@ export async function getAdvikaReply({
   currentMessage,
   history = [],
   recentChannelMsgs = [],
-  isRandom = false, // true when bot randomly jumps into convo
-}) {
+  isRandom = false,
+}, retries = 2) {
   const apiKey = process.env.GEMINI_API_KEY;
   console.log(
     "[DEBUG] API Key present:",
@@ -100,7 +100,6 @@ export async function getAdvikaReply({
   );
   if (!apiKey) throw new Error("GEMINI_API_KEY not set");
 
-  // Build context injection
   const contextMsg = buildContextMessage(
     guild_id,
     channel_id,
@@ -109,8 +108,6 @@ export async function getAdvikaReply({
     recentChannelMsgs,
   );
 
-  // Convert DB history to Gemini's format
-  // Gemini uses: { role: "user"|"model", parts: [{ text }] }
   const geminiHistory = history.map((h) => ({
     role: h.role === "assistant" ? "model" : "user",
     parts: [
@@ -118,13 +115,11 @@ export async function getAdvikaReply({
     ],
   }));
 
-  // Build the current user message with context prepended if first message
   let userMessageText = `${username}: ${currentMessage}`;
   if (contextMsg) {
     userMessageText = `${contextMsg}\n\n${userMessageText}`;
   }
 
-  // For random/ambient replies, add a hint
   if (isRandom) {
     userMessageText = `[You decided to randomly jump into the conversation on your own, unprompted. Be natural about it, like you just felt like saying something.]\n\n${userMessageText}`;
   }
@@ -141,10 +136,10 @@ export async function getAdvikaReply({
       },
     ],
     generationConfig: {
-      temperature: 1.0, // High creativity for personality
+      temperature: 1.0,
       topK: 40,
       topP: 0.95,
-      maxOutputTokens: 256, // Short punchy replies
+      maxOutputTokens: 512, // fixed: was 256, caused mid-sentence cutoffs
       stopSequences: [],
     },
     safetySettings: [
@@ -167,17 +162,32 @@ export async function getAdvikaReply({
     body: JSON.stringify(requestBody),
   });
 
+  // ── Retry on 429 (rate limit) ─────────────────────────────────────────────
+  if (response.status === 429 && retries > 0) {
+    console.warn(`[Advika] Rate limited (429), retrying in 3s... (${retries} left)`);
+    await new Promise((r) => setTimeout(r, 3000));
+    return getAdvikaReply(
+      { guild_id, channel_id, user_id, username, currentMessage, history, recentChannelMsgs, isRandom },
+      retries - 1,
+    );
+  }
+
   if (!response.ok) {
     const err = await response.text();
+    console.error("[Gemini Raw Error]:", err); // 🔴 log full error for debugging
     throw new Error(`Gemini API error ${response.status}: ${err}`);
   }
 
   const data = await response.json();
 
-  // Extract text from response
   const candidate = data.candidates?.[0];
   if (!candidate || candidate.finishReason === "SAFETY") {
     return "yaar kuch zyada hi bold ho gaye tum 😭 mujhe abhi nahi bolna kuch";
+  }
+
+  // 🟡 Log finish reason if not STOP — helps catch truncation issues
+  if (candidate.finishReason && candidate.finishReason !== "STOP") {
+    console.warn("[Advika] Unexpected finishReason:", candidate.finishReason);
   }
 
   const text = candidate.content?.parts?.[0]?.text?.trim();
@@ -189,13 +199,10 @@ export async function getAdvikaReply({
 // ─── Decide if bot should randomly respond ───────────────────────────────────
 
 export function shouldRandomlyRespond(message) {
-  // Never respond to bots, commands, or very short messages
   if (message.author.bot) return false;
   if (message.content.startsWith("!")) return false;
   if (message.content.length < 5) return false;
 
-  // Channel-level chance: 4% base
-  // Increase chance if message is longer or has question marks (more engaging)
   let chance = 0.04;
   if (message.content.includes("?")) chance += 0.02;
   if (message.content.length > 80) chance += 0.01;
