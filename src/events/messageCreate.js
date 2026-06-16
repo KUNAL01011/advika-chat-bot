@@ -6,24 +6,44 @@ import {
   bumpRoast,
   bumpFlirt,
 } from "../db/index.js";
-import { getAdvikaReply, shouldRandomlyRespond } from "../ai/gemini.js";
+import {
+  getAdvikaReply,
+  shouldRandomlyRespond,
+  getTypingDelay,
+} from "../ai/gemini.js";
 
-// Simple heuristic: does the reply look more roasty or flirty?
 function classifyReply(text) {
-  const roastWords = ["yaar", "bhai", "seriously", "pagal", "cringe", "really", "lmao", "😭", "🙄"];
-  const flirtWords = ["cute", "aww", "btw", "💀", "😏", "😌", "accha", "nice try", "impressive"];
-
+  const roastWords = [
+    "yaar",
+    "bhai",
+    "seriously",
+    "pagal",
+    "cringe",
+    "really",
+    "lmao",
+    "😭",
+    "🙄",
+  ];
+  const flirtWords = [
+    "cute",
+    "aww",
+    "btw",
+    "💀",
+    "😏",
+    "😌",
+    "accha",
+    "nice try",
+    "impressive",
+  ];
   const lower = text.toLowerCase();
-  const roastScore = roastWords.filter(w => lower.includes(w)).length;
-  const flirtScore = flirtWords.filter(w => lower.includes(w)).length;
-
+  const roastScore = roastWords.filter((w) => lower.includes(w)).length;
+  const flirtScore = flirtWords.filter((w) => lower.includes(w)).length;
   if (roastScore > flirtScore) return "roast";
   if (flirtScore > roastScore) return "flirt";
   return null;
 }
 
-// Rate limiting: track recent responses per channel to avoid spam
-const recentResponses = new Map(); // channelId -> last response timestamp
+const recentResponses = new Map();
 
 function isRateLimited(channelId, cooldownMs = 3000) {
   const last = recentResponses.get(channelId);
@@ -32,12 +52,10 @@ function isRateLimited(channelId, cooldownMs = 3000) {
   return false;
 }
 
-// Track messages Advika sent so we can detect replies to her
-const advikaSentMessages = new Set(); // message IDs
+const advikaSentMessages = new Set();
 
 export function trackSentMessage(messageId) {
   advikaSentMessages.add(messageId);
-  // Cleanup after 30 minutes to prevent memory leak
   setTimeout(() => advikaSentMessages.delete(messageId), 30 * 60 * 1000);
 }
 
@@ -52,43 +70,35 @@ export async function handleChatMessage(message, client) {
   const username = message.member?.displayName || message.author.username;
   const content = message.content;
 
-  // ── Determine trigger type ────────────────────────────────────────────────
-
   const isMentioned = message.mentions.has(client.user.id);
   const isReplyToAdvika =
     message.reference?.messageId &&
     advikaSentMessages.has(message.reference.messageId);
+  const isRandomTrigger =
+    !isMentioned && !isReplyToAdvika && shouldRandomlyRespond(message);
 
-  const isRandomTrigger = !isMentioned && !isReplyToAdvika && shouldRandomlyRespond(message);
-
-  // Only proceed if it's one of the three trigger types
   if (!isMentioned && !isReplyToAdvika && !isRandomTrigger) {
-    // Still save user messages to DB for context (even when not responding)
     if (!content.startsWith("!") && content.length > 2) {
       updateProfile({ user_id, guild_id, username });
-      saveMessage({ guild_id, channel_id, user_id, username, role: "user", content });
+      saveMessage({
+        guild_id,
+        channel_id,
+        user_id,
+        username,
+        role: "user",
+        content,
+      });
     }
     return;
   }
 
-  // Rate limit check
   if (isRateLimited(channel_id)) return;
 
-  // ── Prepare context ───────────────────────────────────────────────────────
-
-  // Clean up the mention from message text if present
-  let cleanContent = content
-    .replace(/<@!?[0-9]+>/g, "")
-    .trim();
-
-  if (!cleanContent && isMentioned) {
+  let cleanContent = content.replace(/<@!?[0-9]+>/g, "").trim();
+  if (!cleanContent && isMentioned)
     cleanContent = "[just mentioned me with no text]";
-  }
 
-  // Update user profile
   updateProfile({ user_id, guild_id, username });
-
-  // Save incoming user message
   saveMessage({
     guild_id,
     channel_id,
@@ -98,16 +108,11 @@ export async function handleChatMessage(message, client) {
     content: cleanContent,
   });
 
-  // Fetch conversation history with this user
-  const history = getUserHistory(guild_id, channel_id, user_id, 12);
-
-  // Fetch recent channel context for ambient awareness
+  const history = getUserHistory(guild_id, channel_id, user_id, 8);
   const recentChannelMsgs = getRecentChannelContext(guild_id, channel_id, 8);
 
-  // ── Get AI reply ──────────────────────────────────────────────────────────
-
   try {
-    // Show typing indicator
+    // Start typing immediately
     await message.channel.sendTyping();
 
     const reply = await getAdvikaReply({
@@ -116,26 +121,35 @@ export async function handleChatMessage(message, client) {
       user_id,
       username,
       currentMessage: cleanContent,
-      history: history.slice(0, -1), // exclude the message we just saved (it's the current one)
+      history: history.slice(0, -1),
       recentChannelMsgs,
       isRandom: isRandomTrigger,
     });
 
-    // ── Send the reply ────────────────────────────────────────────────────────
-    let sentMsg;
-
-    if (isRandomTrigger) {
-      // Random responses: just send in channel without replying to specific message
-      sentMsg = await message.channel.send(reply);
-    } else {
-      // Mentions and reply-chains: reply to the specific message
-      sentMsg = await message.reply({ content: reply, allowedMentions: { repliedUser: true } });
+    // ── null = quota exhausted, go silent ────────────────────────────────
+    if (reply === null) {
+      console.log(`[Advika] Quota exhausted — not replying to ${username}`);
+      return;
     }
 
-    // Track this message so we can detect replies to it
+    // ── Natural typing delay based on reply length ────────────────────────
+    const delay = getTypingDelay(reply);
+    await message.channel.sendTyping(); // refresh typing indicator
+    await new Promise((r) => setTimeout(r, delay));
+
+    // ── Send reply ────────────────────────────────────────────────────────
+    let sentMsg;
+    if (isRandomTrigger) {
+      sentMsg = await message.channel.send(reply);
+    } else {
+      sentMsg = await message.reply({
+        content: reply,
+        allowedMentions: { repliedUser: true },
+      });
+    }
+
     trackSentMessage(sentMsg.id);
 
-    // ── Save Advika's reply to DB ─────────────────────────────────────────────
     saveMessage({
       guild_id,
       channel_id,
@@ -145,16 +159,15 @@ export async function handleChatMessage(message, client) {
       content: reply,
     });
 
-    // ── Update mood stats ──────────────────────────────────────────────────────
     const mood = classifyReply(reply);
     if (mood === "roast") bumpRoast(user_id, guild_id);
     if (mood === "flirt") bumpFlirt(user_id, guild_id);
-
   } catch (error) {
     console.error("[Advika AI Error]:", error.message);
-    // Silent fail for random triggers — don't expose errors for unprompted jumps
     if (!isRandomTrigger) {
-      await message.reply("arre mera dimag thoda hang hua, ek second 😭").catch(() => {});
+      await message
+        .reply("arre mera dimag thoda hang hua, ek second 😭")
+        .catch(() => {});
     }
   }
 }

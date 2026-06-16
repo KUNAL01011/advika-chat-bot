@@ -1,7 +1,46 @@
-import { getUserHistory, getUserProfile } from "../db/index.js";
+import { getUserProfile } from "../db/index.js";
+import db from "../db/index.js";
 
 const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+
+// ─── Daily Quota Tracker (SQLite) ────────────────────────────────────────────
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS quota_tracker (
+    date      TEXT PRIMARY KEY,
+    req_count INTEGER DEFAULT 0
+  );
+`);
+
+const getQuota = db.prepare(
+  `SELECT req_count FROM quota_tracker WHERE date = ?`,
+);
+const upsertQuota = db.prepare(`
+  INSERT INTO quota_tracker (date, req_count) VALUES (?, 1)
+  ON CONFLICT(date) DO UPDATE SET req_count = req_count + 1
+`);
+
+const DAILY_REQ_LIMIT = 480; // 500/day limit, keep 20 buffer
+
+function getTodayKey() {
+  return new Date().toISOString().slice(0, 10); // "2025-06-16"
+}
+
+function isQuotaExhausted() {
+  const row = getQuota.get(getTodayKey());
+  return row ? row.req_count >= DAILY_REQ_LIMIT : false;
+}
+
+function incrementQuota() {
+  upsertQuota.run(getTodayKey());
+}
+
+function getRemainingQuota() {
+  const row = getQuota.get(getTodayKey());
+  const used = row ? row.req_count : 0;
+  return DAILY_REQ_LIMIT - used;
+}
 
 // ─── Advika's Core System Prompt ─────────────────────────────────────────────
 
@@ -47,17 +86,10 @@ const SYSTEM_PROMPT = `You are Advika, a Discord chatbot with a very specific pe
 
 You're Advika. Be her.`;
 
-// ─── Build Context for Gemini ─────────────────────────────────────────────────
+// ─── Build Context ────────────────────────────────────────────────────────────
 
-function buildContextMessage(
-  guild_id,
-  channel_id,
-  user_id,
-  username,
-  recentChannelMsgs,
-) {
+function buildContextMessage(guild_id, user_id, username, recentChannelMsgs) {
   const profile = getUserProfile(user_id, guild_id);
-
   let contextParts = [];
 
   if (profile) {
@@ -68,7 +100,7 @@ function buildContextMessage(
     );
   }
 
-  if (recentChannelMsgs && recentChannelMsgs.length > 0) {
+  if (recentChannelMsgs?.length > 0) {
     const channelSnippet = recentChannelMsgs
       .slice(-5)
       .map((m) => `${m.username}: ${m.content}`)
@@ -79,30 +111,44 @@ function buildContextMessage(
   return contextParts.join("\n\n");
 }
 
+// ─── Natural Typing Delay ─────────────────────────────────────────────────────
+// Makes Advika feel human — slower for longer replies
+
+function getTypingDelay(replyText) {
+  const baseDelay = 1200;
+  const perCharDelay = 28; // ~35 WPM typing feel
+  const calculated = baseDelay + replyText.length * perCharDelay;
+  return Math.min(calculated, 6000); // cap at 6s
+}
+
 // ─── Main AI Call ─────────────────────────────────────────────────────────────
 
-export async function getAdvikaReply({
-  guild_id,
-  channel_id,
-  user_id,
-  username,
-  currentMessage,
-  history = [],
-  recentChannelMsgs = [],
-  isRandom = false,
-}, retries = 2) {
+export async function getAdvikaReply(
+  {
+    guild_id,
+    channel_id,
+    user_id,
+    username,
+    currentMessage,
+    history = [],
+    recentChannelMsgs = [],
+    isRandom = false,
+  },
+  retries = 2,
+) {
   const apiKey = process.env.GEMINI_API_KEY;
-  console.log(
-    "[DEBUG] API Key present:",
-    !!apiKey,
-    "| First 8 chars:",
-    apiKey?.slice(0, 8),
-  );
   if (!apiKey) throw new Error("GEMINI_API_KEY not set");
+
+  // ── Quota gate — silent fail if exhausted ────────────────────────────────
+  if (isQuotaExhausted()) {
+    console.warn(
+      `[Advika] Daily quota exhausted (${DAILY_REQ_LIMIT} req used). Going silent.`,
+    );
+    return null; // caller must handle null = don't reply
+  }
 
   const contextMsg = buildContextMessage(
     guild_id,
-    channel_id,
     user_id,
     username,
     recentChannelMsgs,
@@ -116,30 +162,22 @@ export async function getAdvikaReply({
   }));
 
   let userMessageText = `${username}: ${currentMessage}`;
-  if (contextMsg) {
-    userMessageText = `${contextMsg}\n\n${userMessageText}`;
-  }
-
+  if (contextMsg) userMessageText = `${contextMsg}\n\n${userMessageText}`;
   if (isRandom) {
-    userMessageText = `[You decided to randomly jump into the conversation on your own, unprompted. Be natural about it, like you just felt like saying something.]\n\n${userMessageText}`;
+    userMessageText = `[You decided to randomly jump into the conversation on your own, unprompted. Be natural about it.]\n\n${userMessageText}`;
   }
 
   const requestBody = {
-    system_instruction: {
-      parts: [{ text: SYSTEM_PROMPT }],
-    },
+    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
     contents: [
       ...geminiHistory,
-      {
-        role: "user",
-        parts: [{ text: userMessageText }],
-      },
+      { role: "user", parts: [{ text: userMessageText }] },
     ],
     generationConfig: {
       temperature: 1.0,
       topK: 40,
       topP: 0.95,
-      maxOutputTokens: 512, // fixed: was 256, caused mid-sentence cutoffs
+      maxOutputTokens: 512,
       stopSequences: [],
     },
     safetySettings: [
@@ -162,30 +200,58 @@ export async function getAdvikaReply({
     body: JSON.stringify(requestBody),
   });
 
-  // ── Retry on 429 (rate limit) ─────────────────────────────────────────────
+  // ── 429 — read retryDelay from Google's response ─────────────────────────
   if (response.status === 429 && retries > 0) {
-    console.warn(`[Advika] Rate limited (429), retrying in 3s... (${retries} left)`);
-    await new Promise((r) => setTimeout(r, 3000));
+    let waitMs = 10000; // default 10s
+    try {
+      const errBody = await response.json();
+      const retryInfo = errBody?.error?.details?.find(
+        (d) => d["@type"] === "type.googleapis.com/google.rpc.RetryInfo",
+      );
+      if (retryInfo?.retryDelay) {
+        const seconds = parseInt(retryInfo.retryDelay); // "54s" → 54
+        waitMs = (seconds + 2) * 1000; // add 2s buffer
+      }
+    } catch (_) {}
+    console.warn(
+      `[Advika] 429 rate limited — waiting ${waitMs / 1000}s before retry (${retries} left)`,
+    );
+    await new Promise((r) => setTimeout(r, waitMs));
     return getAdvikaReply(
-      { guild_id, channel_id, user_id, username, currentMessage, history, recentChannelMsgs, isRandom },
+      {
+        guild_id,
+        channel_id,
+        user_id,
+        username,
+        currentMessage,
+        history,
+        recentChannelMsgs,
+        isRandom,
+      },
       retries - 1,
     );
   }
 
   if (!response.ok) {
     const err = await response.text();
-    console.error("[Gemini Raw Error]:", err); // 🔴 log full error for debugging
+    console.error("[Gemini Raw Error]:", err);
     throw new Error(`Gemini API error ${response.status}: ${err}`);
   }
 
-  const data = await response.json();
+  // ── Success — count it ────────────────────────────────────────────────────
+  incrementQuota();
+  const remaining = getRemainingQuota();
+  if (remaining <= 50) {
+    console.warn(`[Advika] ⚠️ Quota low: ${remaining} requests left today`);
+  }
 
+  const data = await response.json();
   const candidate = data.candidates?.[0];
+
   if (!candidate || candidate.finishReason === "SAFETY") {
     return "yaar kuch zyada hi bold ho gaye tum 😭 mujhe abhi nahi bolna kuch";
   }
 
-  // 🟡 Log finish reason if not STOP — helps catch truncation issues
   if (candidate.finishReason && candidate.finishReason !== "STOP") {
     console.warn("[Advika] Unexpected finishReason:", candidate.finishReason);
   }
@@ -195,6 +261,9 @@ export async function getAdvikaReply({
 
   return text;
 }
+
+// ─── Typing delay export ──────────────────────────────────────────────────────
+export { getTypingDelay };
 
 // ─── Decide if bot should randomly respond ───────────────────────────────────
 
