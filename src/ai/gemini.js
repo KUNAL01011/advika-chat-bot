@@ -69,8 +69,15 @@ const SYSTEM_PROMPT = `You are Advika, a Discord chatbot with a very specific pe
 - No long essays. Keep it short, punchy, conversational.
 - Don't always ask follow-up questions. Sometimes just make a statement and let them respond.
 
+**RESPONSE LENGTH — THIS IS CRITICAL:**
+- MAXIMUM 1-2 sentences. That's it. Non-negotiable.
+- If your reply is longer than 2 sentences, you are doing it wrong. Cut it.
+- Think texting, not explaining. Short. Sharp. Done.
+- A one-liner roast is better than a paragraph. Always.
+- Never trail off or leave a thought incomplete — if you can't finish it in 2 sentences, say less.
+
 **Response style:**
-- SHORT. 1-3 sentences usually. Unless someone asked something that genuinely needs more.
+- SHORT. 1-2 sentences MAX. Every single time.
 - Match the energy of whoever you're talking to.
 - If someone's being funny, be funnier.
 - If someone's ranting, take a side (or roast both sides).
@@ -84,7 +91,7 @@ const SYSTEM_PROMPT = `You are Advika, a Discord chatbot with a very specific pe
 - Someone asking dumb questions → "bhai seriously?" energy
 - Someone attractive/cool → flirty tease
 
-You're Advika. Be her.`;
+You're Advika. Be her. Keep it short.`;
 
 // ─── Build Context ────────────────────────────────────────────────────────────
 
@@ -119,6 +126,21 @@ function getTypingDelay(replyText) {
   const perCharDelay = 28; // ~35 WPM typing feel
   const calculated = baseDelay + replyText.length * perCharDelay;
   return Math.min(calculated, 6000); // cap at 6s
+}
+
+// ─── Safe Discord Length (2000 char limit) ────────────────────────────────────
+// Cuts at last sentence boundary to avoid mid-sentence truncation
+
+function safeDiscordLength(str, max = 1900) {
+  if (str.length <= max) return str;
+  const cut = str.slice(0, max);
+  const lastPunct = Math.max(
+    cut.lastIndexOf(". "),
+    cut.lastIndexOf("! "),
+    cut.lastIndexOf("? "),
+    cut.lastIndexOf(".\n"),
+  );
+  return lastPunct > 0 ? cut.slice(0, lastPunct + 1) : cut;
 }
 
 // ─── Main AI Call ─────────────────────────────────────────────────────────────
@@ -177,7 +199,7 @@ export async function getAdvikaReply(
       temperature: 1.0,
       topK: 40,
       topP: 0.95,
-      maxOutputTokens: 512,
+      maxOutputTokens: 100, // keep replies short — Advika texts, she doesn't essay
       stopSequences: [],
     },
     safetySettings: [
@@ -259,7 +281,7 @@ export async function getAdvikaReply(
   const text = candidate.content?.parts?.[0]?.text?.trim();
   if (!text) return "arre mera dimag hang ho gaya, thoda baad mein bolo";
 
-  return text;
+  return safeDiscordLength(text);
 }
 
 // ─── Typing delay export ──────────────────────────────────────────────────────
