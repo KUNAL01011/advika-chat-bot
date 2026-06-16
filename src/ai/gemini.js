@@ -8,7 +8,7 @@ const GEMINI_API_URL =
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS quota_tracker (
-    date      TEXT PRIMARY KEY,
+    date    TEXT PRIMARY KEY,
     req_count INTEGER DEFAULT 0
   );
 `);
@@ -66,19 +66,16 @@ const SYSTEM_PROMPT = `You are Advika, a Discord chatbot with a very specific pe
 - No "As an AI language model..."
 - No excessive emojis. Max 1-2 per message, and only when it genuinely adds tone.
 - No "I hope this helps!" type endings.
-- No long essays. Keep it short, punchy, conversational.
+- No long essays. Keep it punchy and conversational.
 - Don't always ask follow-up questions. Sometimes just make a statement and let them respond.
 
-**RESPONSE LENGTH — THIS IS CRITICAL:**
-- MAXIMUM 1-2 sentences. That's it. Non-negotiable.
-- If your reply is longer than 2 sentences, you are doing it wrong. Cut it.
-- Think texting, not explaining. Short. Sharp. Done.
-- A one-liner roast is better than a paragraph. Always.
-- ALWAYS write complete sentences. Never end mid-thought. "Lol Kunal," is not a reply. Finish what you start.
-- If you only have 1 thing to say, say it fully and stop. Do not add hanging phrases.
+**RESPONSE LENGTH & COMPLETION:**
+- Keep it brief and natural (1 to 3 short sentences max). 
+- ALWAYS finish your thought completely. Never leave a sentence unfinished or cut yourself off.
+- Think texting, not explaining. Short, sharp, and natural.
+- A one-liner roast is great, but ensure it is a fully formed thought.
 
 **Response style:**
-- SHORT. 1-2 sentences MAX. Every single time.
 - Match the energy of whoever you're talking to.
 - If someone's being funny, be funnier.
 - If someone's ranting, take a side (or roast both sides).
@@ -92,7 +89,7 @@ const SYSTEM_PROMPT = `You are Advika, a Discord chatbot with a very specific pe
 - Someone asking dumb questions → "bhai seriously?" energy
 - Someone attractive/cool → flirty tease
 
-You're Advika. Be her. Keep it short.`;
+You're Advika. Be her. Keep it natural.`;
 
 // ─── Build Context ────────────────────────────────────────────────────────────
 
@@ -120,7 +117,6 @@ function buildContextMessage(guild_id, user_id, username, recentChannelMsgs) {
 }
 
 // ─── Natural Typing Delay ─────────────────────────────────────────────────────
-// Makes Advika feel human — slower for longer replies
 
 function getTypingDelay(replyText) {
   const baseDelay = 1200;
@@ -129,8 +125,24 @@ function getTypingDelay(replyText) {
   return Math.min(calculated, 6000); // cap at 6s
 }
 
+// ─── Text Cleanup ─────────────────────────────────────────────────────────────
+// Fixes hanging commas or trailing conjunctions if the AI stops abruptly
+
+function cleanHangingText(text) {
+  let cleaned = text.trim();
+  cleaned = cleaned.replace(/[,-\s]+$/, "");
+
+  const hangingWords = [" aur", " and", " but", " par", " it", " is", " the"];
+  for (const word of hangingWords) {
+    if (cleaned.toLowerCase().endsWith(word)) {
+      cleaned = cleaned.slice(0, -word.length).trim();
+      break;
+    }
+  }
+  return cleaned;
+}
+
 // ─── Safe Discord Length (2000 char limit) ────────────────────────────────────
-// Cuts at last sentence boundary to avoid mid-sentence truncation
 
 function safeDiscordLength(str, max = 1900) {
   if (str.length <= max) return str;
@@ -200,7 +212,7 @@ export async function getAdvikaReply(
       temperature: 1.0,
       topK: 40,
       topP: 0.95,
-      maxOutputTokens: 200, // enough to finish a complete sentence, not an essay
+      maxOutputTokens: 300, // Slightly bumped to guarantee room for sentence completion
       stopSequences: [],
     },
     safetySettings: [
@@ -282,7 +294,9 @@ export async function getAdvikaReply(
   const text = candidate.content?.parts?.[0]?.text?.trim();
   if (!text) return "arre mera dimag hang ho gaya, thoda baad mein bolo";
 
-  return safeDiscordLength(text);
+  // Clean up any weird cut-offs and ensure safe length
+  const cleanedText = cleanHangingText(text);
+  return safeDiscordLength(cleanedText);
 }
 
 // ─── Typing delay export ──────────────────────────────────────────────────────
