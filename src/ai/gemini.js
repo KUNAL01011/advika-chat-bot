@@ -125,22 +125,22 @@ function getTypingDelay(replyText) {
   return Math.min(calculated, 6000); // cap at 6s
 }
 
-// ─── Text Cleanup ─────────────────────────────────────────────────────────────
-// Fixes hanging commas or trailing conjunctions if the AI stops abruptly
+// // ─── Text Cleanup ─────────────────────────────────────────────────────────────
+// // Fixes hanging commas or trailing conjunctions if the AI stops abruptly
 
-function cleanHangingText(text) {
-  let cleaned = text.trim();
-  cleaned = cleaned.replace(/[,-\s]+$/, "");
+// function cleanHangingText(text) {
+//   let cleaned = text.trim();
+//   cleaned = cleaned.replace(/[,-\s]+$/, "");
 
-  const hangingWords = [" aur", " and", " but", " par", " it", " is", " the"];
-  for (const word of hangingWords) {
-    if (cleaned.toLowerCase().endsWith(word)) {
-      cleaned = cleaned.slice(0, -word.length).trim();
-      break;
-    }
-  }
-  return cleaned;
-}
+//   const hangingWords = [" aur", " and", " but", " par", " it", " is", " the"];
+//   for (const word of hangingWords) {
+//     if (cleaned.toLowerCase().endsWith(word)) {
+//       cleaned = cleaned.slice(0, -word.length).trim();
+//       break;
+//     }
+//   }
+//   return cleaned;
+// }
 
 // ─── Safe Discord Length (2000 char limit) ────────────────────────────────────
 
@@ -234,7 +234,6 @@ export async function getAdvikaReply(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
   });
-  console.log("Responses : ", response);
 
   // ── 429 — read retryDelay from Google's response ─────────────────────────
   if (response.status === 429 && retries > 0) {
@@ -295,9 +294,7 @@ export async function getAdvikaReply(
   const text = candidate.content?.parts?.[0]?.text?.trim();
   if (!text) return "arre mera dimag hang ho gaya, thoda baad mein bolo";
 
-  // Clean up any weird cut-offs and ensure safe length
-  const cleanedText = cleanHangingText(text);
-  return safeDiscordLength(cleanedText);
+  return safeDiscordLength(text);
 }
 
 // ─── Typing delay export ──────────────────────────────────────────────────────
