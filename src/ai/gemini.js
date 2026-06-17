@@ -234,6 +234,7 @@ export async function getAdvikaReply(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
   });
+  console.log("Responses : ", response);
 
   // ── 429 — read retryDelay from Google's response ─────────────────────────
   if (response.status === 429 && retries > 0) {
