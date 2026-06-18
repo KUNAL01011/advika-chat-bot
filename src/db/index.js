@@ -106,9 +106,26 @@ const cleanupOld = db.prepare(`
   AND guild_id = @guild_id AND channel_id = @channel_id AND user_id = @user_id
 `);
 
+// ─── Delete all data for a user (GDPR / Privacy request) ─────────────────────
+
+const deleteUserMessages = db.prepare(`
+  DELETE FROM messages WHERE user_id = @user_id
+`);
+
+const deleteUserProfile = db.prepare(`
+  DELETE FROM user_profiles WHERE user_id = @user_id
+`);
+
 // ─── Exported Functions ───────────────────────────────────────────────────────
 
-export function saveMessage({ guild_id, channel_id, user_id, username, role, content }) {
+export function saveMessage({
+  guild_id,
+  channel_id,
+  user_id,
+  username,
+  role,
+  content,
+}) {
   insertMessage.run({ guild_id, channel_id, user_id, username, role, content });
   // Cleanup old messages periodically (1 in 20 chance)
   if (Math.random() < 0.05) {
@@ -147,6 +164,19 @@ export function bumpRoast(user_id, guild_id) {
 
 export function bumpFlirt(user_id, guild_id) {
   incrementFlirt.run({ user_id, guild_id });
+}
+
+/**
+ * Deletes ALL data for a user across ALL guilds.
+ * Returns counts of what was deleted.
+ */
+export function deleteUserData(user_id) {
+  const msgResult = deleteUserMessages.run({ user_id });
+  const profileResult = deleteUserProfile.run({ user_id });
+  return {
+    messagesDeleted: msgResult.changes,
+    profileDeleted: profileResult.changes,
+  };
 }
 
 export default db;

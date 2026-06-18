@@ -1,5 +1,25 @@
-node_modules/
+# Environment variables — NEVER commit this
 .env
+.env.local
+.env.production
+
+# SQLite database — contains user data, never commit
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# Node modules
+node_modules/
+
+# Logs
 *.log
+npm-debug.log*
+
+# OS files
 .DS_Store
-dist/
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/

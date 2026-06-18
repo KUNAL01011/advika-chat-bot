@@ -5,6 +5,7 @@ import {
   updateProfile,
   bumpRoast,
   bumpFlirt,
+  deleteUserData,
 } from "../db/index.js";
 import {
   getAdvikaReply,
@@ -59,6 +60,73 @@ export function trackSentMessage(messageId) {
   setTimeout(() => advikaSentMessages.delete(messageId), 30 * 60 * 1000);
 }
 
+// ─── Delete Data Handler ──────────────────────────────────────────────────────
+
+async function handleDeleteData(message) {
+  const user_id = message.author.id;
+  const username = message.member?.displayName || message.author.username;
+
+  try {
+    const result = deleteUserData(user_id);
+
+    if (result.messagesDeleted === 0 && result.profileDeleted === 0) {
+      await message.reply({
+        content: "yaar tere baare mein koi data tha hi nahi mere paas 🤷",
+        allowedMentions: { repliedUser: false },
+      });
+      return;
+    }
+
+    console.log(
+      `[Privacy] Deleted data for user ${username} (${user_id}): ${result.messagesDeleted} messages, ${result.profileDeleted} profile(s)`,
+    );
+
+    await message.reply({
+      content: `✅ Done. Tera saara data delete kar diya — ${result.messagesDeleted} messages aur profile bhi. Ab main tujhe bilkul naya samjhungi 👋`,
+      allowedMentions: { repliedUser: false },
+    });
+  } catch (err) {
+    console.error("[DeleteData Error]:", err.message);
+    await message.reply({
+      content: "kuch toh gadbad hui, thodi der baad try kar yaar 😭",
+      allowedMentions: { repliedUser: false },
+    });
+  }
+}
+
+// ─── Slash Command: /deletedata ───────────────────────────────────────────────
+
+export async function handleDeleteDataSlash(interaction) {
+  const user_id = interaction.user.id;
+  const username = interaction.member?.displayName || interaction.user.username;
+
+  await interaction.deferReply({ ephemeral: true });
+
+  try {
+    const result = deleteUserData(user_id);
+
+    if (result.messagesDeleted === 0 && result.profileDeleted === 0) {
+      await interaction.editReply(
+        "yaar tere baare mein koi data tha hi nahi mere paas 🤷",
+      );
+      return;
+    }
+
+    console.log(
+      `[Privacy] Deleted data for user ${username} (${user_id}): ${result.messagesDeleted} messages, ${result.profileDeleted} profile(s)`,
+    );
+
+    await interaction.editReply(
+      `✅ Done. Tera saara data delete kar diya — ${result.messagesDeleted} messages aur profile bhi. Ab main tujhe bilkul naya samjhungi 👋`,
+    );
+  } catch (err) {
+    console.error("[DeleteData Slash Error]:", err.message);
+    await interaction.editReply(
+      "kuch toh gadbad hui, thodi der baad try kar yaar 😭",
+    );
+  }
+}
+
 // ─── Main Handler ─────────────────────────────────────────────────────────────
 
 export async function handleChatMessage(message, client) {
@@ -69,6 +137,16 @@ export async function handleChatMessage(message, client) {
   const user_id = message.author.id;
   const username = message.member?.displayName || message.author.username;
   const content = message.content;
+
+  // ── Privacy: prefix delete command ───────────────────────────────────────
+  if (
+    content.trim().toLowerCase() === "!deletedata" ||
+    content.trim().toLowerCase() === "!delete_data" ||
+    content.trim().toLowerCase() === "!deletemydata"
+  ) {
+    await handleDeleteData(message);
+    return;
+  }
 
   const isMentioned = message.mentions.has(client.user.id);
   const isReplyToAdvika =
