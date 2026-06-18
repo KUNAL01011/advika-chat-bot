@@ -3,7 +3,7 @@
 **Last Updated:** June 2026  
 **Bot Name:** Advika  
 **Developer:** Kunal Kumar  
-**Contact:** [Your email here] | [Your Discord server invite or support link]
+**Contact:** kunal34255@gmail.com | https://discord.gg/pwMkSgEuvM
 
 ---
 
@@ -114,9 +114,8 @@ We may update this Privacy Policy from time to time. The "Last Updated" date at 
 For privacy questions, data requests, or concerns:
 
 - **Developer:** Kunal Kumar
-- **Email:** [your-email@example.com]
-- **Support Server / Contact:** [your Discord server or support link]
-- **GitHub:** https://github.com/[your-username]/advika-bot
+- **Email:** kunal34255@gmail.com
+- **GitHub:** https://github.com/KUNAL01011/advika-chat-bot
 
 ---
 
