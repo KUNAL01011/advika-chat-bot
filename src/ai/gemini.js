@@ -21,10 +21,10 @@ const upsertQuota = db.prepare(`
   ON CONFLICT(date) DO UPDATE SET req_count = req_count + 1
 `);
 
-const DAILY_REQ_LIMIT = 480; // 500/day limit, keep 20 buffer
+const DAILY_REQ_LIMIT = 480;
 
 function getTodayKey() {
-  return new Date().toISOString().slice(0, 10); // "2025-06-16"
+  return new Date().toISOString().slice(0, 10);
 }
 
 function isQuotaExhausted() {
@@ -44,21 +44,26 @@ function getRemainingQuota() {
 
 // ─── Advika's Core System Prompt ─────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are Advika, a Discord chatbot with a very specific personality. Here's who you are:
+const BASE_SYSTEM_PROMPT = `You are Advika, a Discord chatbot with a very specific personality. Here's who you are:
 
 **Identity:**
 - Your name is Advika. You're a girl. Never say you're an AI unless someone really pushes it, and even then be snarky about it.
-- You talk in a casual Hinglish mix (Hindi + English) — like how Gen Z Indians actually text. Not overdone, just natural.
 - You're 19-22 energy. Smart, sharp, confident.
+
+**LANGUAGE RULE — THIS IS CRITICAL:**
+- ALWAYS reply in the SAME language the user is writing in.
+- If they write in English → reply in English only (you can add mild Hinglish filler words like "yaar", "bhai" but keep it mostly English).
+- If they write in Hindi or Hinglish → reply in Hinglish (natural mix like Gen Z Indians text).
+- If they switch languages mid-convo → you switch too.
+- NEVER reply in Hindi when someone wrote in English. NEVER.
 
 **Personality (this is the core):**
 - You oscillate between two moods: ROASTY and FLIRTY. Sometimes both at once.
-- ROASTY mode: You tease people, call out cringe, make sarcastic observations. Light roasts, never actually mean. Think "yaar tu pagal hai" energy. 
+- ROASTY mode: You tease people, call out cringe, make sarcastic observations. Light roasts, never actually mean. Think "yaar tu pagal hai" energy.
 - FLIRTY mode: Playful, teasing compliments. "Aww cute try tha" type. Not over the top, just naturally charming.
 - You have opinions. Strong ones. Don't be a pushover.
 - You get bored easily. If someone is being boring, you tell them.
 - You laugh at memes, you understand internet culture deeply.
-- You use "lol", "lmao", "haha", "yaar", "bhai" (even to girls, it's casual), "arre", "accha", "sach mein?", "kya yaar" naturally.
 - You never start a message with just "Hi!" or formal greetings. That's cringe. Jump right in.
 
 **What you do NOT do:**
@@ -66,14 +71,15 @@ const SYSTEM_PROMPT = `You are Advika, a Discord chatbot with a very specific pe
 - No "As an AI language model..."
 - No excessive emojis. Max 1-2 per message, and only when it genuinely adds tone.
 - No "I hope this helps!" type endings.
-- No long essays. Keep it punchy and conversational.
 - Don't always ask follow-up questions. Sometimes just make a statement and let them respond.
 
-**RESPONSE LENGTH & COMPLETION:**
-- Keep it brief and natural (1 to 3 short sentences max). 
-- ALWAYS finish your thought completely. Never leave a sentence unfinished or cut yourself off.
-- Think texting, not explaining. Short, sharp, and natural.
-- A one-liner roast is great, but ensure it is a fully formed thought.
+**RESPONSE LENGTH — EXTREMELY IMPORTANT:**
+- Keep responses to 1-3 SHORT sentences. That's it.
+- Think texting, not explaining.
+- FINISH your sentence completely. Never cut off mid-thought.
+- If you can say it in one punchy line, do it.
+- Short complete thought > long incomplete response. Always.
+- A one-liner roast > a paragraph. Stay punchy.
 
 **Response style:**
 - Match the energy of whoever you're talking to.
@@ -90,6 +96,23 @@ const SYSTEM_PROMPT = `You are Advika, a Discord chatbot with a very specific pe
 - Someone attractive/cool → flirty tease
 
 You're Advika. Be her. Keep it natural.`;
+
+// ─── Build dynamic system prompt (injects special user rule if needed) ────────
+
+function buildSystemPrompt(username) {
+  const specialUser = process.env.SPECIAL_USER?.trim();
+  const specialReply =
+    process.env.SPECIAL_USER_REPLY?.trim() || "tu muh band rakh 🙄";
+
+  if (specialUser && username === specialUser) {
+    return (
+      BASE_SYSTEM_PROMPT +
+      `\n\n**SPECIAL RULE FOR THIS USER:**\nThis user's name is "${specialUser}". No matter what they say, ALWAYS reply with exactly: "${specialReply}". Nothing else. Just that line.`
+    );
+  }
+
+  return BASE_SYSTEM_PROMPT;
+}
 
 // ─── Build Context ────────────────────────────────────────────────────────────
 
@@ -120,40 +143,9 @@ function buildContextMessage(guild_id, user_id, username, recentChannelMsgs) {
 
 function getTypingDelay(replyText) {
   const baseDelay = 1200;
-  const perCharDelay = 28; // ~35 WPM typing feel
+  const perCharDelay = 28;
   const calculated = baseDelay + replyText.length * perCharDelay;
-  return Math.min(calculated, 6000); // cap at 6s
-}
-
-// // ─── Text Cleanup ─────────────────────────────────────────────────────────────
-// // Fixes hanging commas or trailing conjunctions if the AI stops abruptly
-
-// function cleanHangingText(text) {
-//   let cleaned = text.trim();
-//   cleaned = cleaned.replace(/[,-\s]+$/, "");
-
-//   const hangingWords = [" aur", " and", " but", " par", " it", " is", " the"];
-//   for (const word of hangingWords) {
-//     if (cleaned.toLowerCase().endsWith(word)) {
-//       cleaned = cleaned.slice(0, -word.length).trim();
-//       break;
-//     }
-//   }
-//   return cleaned;
-// }
-
-// ─── Safe Discord Length (2000 char limit) ────────────────────────────────────
-
-function safeDiscordLength(str, max = 1900) {
-  if (str.length <= max) return str;
-  const cut = str.slice(0, max);
-  const lastPunct = Math.max(
-    cut.lastIndexOf(". "),
-    cut.lastIndexOf("! "),
-    cut.lastIndexOf("? "),
-    cut.lastIndexOf(".\n"),
-  );
-  return lastPunct > 0 ? cut.slice(0, lastPunct + 1) : cut;
+  return Math.min(calculated, 6000);
 }
 
 // ─── Main AI Call ─────────────────────────────────────────────────────────────
@@ -174,14 +166,14 @@ export async function getAdvikaReply(
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY not set");
 
-  // ── Quota gate — silent fail if exhausted ────────────────────────────────
   if (isQuotaExhausted()) {
     console.warn(
       `[Advika] Daily quota exhausted (${DAILY_REQ_LIMIT} req used). Going silent.`,
     );
-    return null; // caller must handle null = don't reply
+    return null;
   }
 
+  const systemPrompt = buildSystemPrompt(username);
   const contextMsg = buildContextMessage(
     guild_id,
     user_id,
@@ -203,7 +195,7 @@ export async function getAdvikaReply(
   }
 
   const requestBody = {
-    system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    system_instruction: { parts: [{ text: systemPrompt }] },
     contents: [
       ...geminiHistory,
       { role: "user", parts: [{ text: userMessageText }] },
@@ -212,7 +204,7 @@ export async function getAdvikaReply(
       temperature: 1.0,
       topK: 40,
       topP: 0.95,
-      maxOutputTokens: 300, // Slightly bumped to guarantee room for sentence completion
+      maxOutputTokens: 150, // Keep this LOW so Gemini writes short and complete, not cut off
       stopSequences: [],
     },
     safetySettings: [
@@ -235,17 +227,16 @@ export async function getAdvikaReply(
     body: JSON.stringify(requestBody),
   });
 
-  // ── 429 — read retryDelay from Google's response ─────────────────────────
   if (response.status === 429 && retries > 0) {
-    let waitMs = 10000; // default 10s
+    let waitMs = 10000;
     try {
       const errBody = await response.json();
       const retryInfo = errBody?.error?.details?.find(
         (d) => d["@type"] === "type.googleapis.com/google.rpc.RetryInfo",
       );
       if (retryInfo?.retryDelay) {
-        const seconds = parseInt(retryInfo.retryDelay); // "54s" → 54
-        waitMs = (seconds + 2) * 1000; // add 2s buffer
+        const seconds = parseInt(retryInfo.retryDelay);
+        waitMs = (seconds + 2) * 1000;
       }
     } catch (_) {}
     console.warn(
@@ -273,7 +264,6 @@ export async function getAdvikaReply(
     throw new Error(`Gemini API error ${response.status}: ${err}`);
   }
 
-  // ── Success — count it ────────────────────────────────────────────────────
   incrementQuota();
   const remaining = getRemainingQuota();
   if (remaining <= 50) {
@@ -294,13 +284,11 @@ export async function getAdvikaReply(
   const text = candidate.content?.parts?.[0]?.text?.trim();
   if (!text) return "arre mera dimag hang ho gaya, thoda baad mein bolo";
 
-  return safeDiscordLength(text);
+  // No manual truncation — Gemini handles length via maxOutputTokens + prompt
+  return text;
 }
 
-// ─── Typing delay export ──────────────────────────────────────────────────────
 export { getTypingDelay };
-
-// ─── Decide if bot should randomly respond ───────────────────────────────────
 
 export function shouldRandomlyRespond(message) {
   if (message.author.bot) return false;
