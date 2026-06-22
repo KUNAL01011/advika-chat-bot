@@ -2,7 +2,7 @@ import { getUserProfile } from "../db/index.js";
 import db from "../db/index.js";
 
 const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent";
 
 // ─── Daily Quota Tracker (SQLite) ────────────────────────────────────────────
 
