@@ -2,7 +2,7 @@ import { getUserProfile } from "../db/index.js";
 import db from "../db/index.js";
 
 const GEMINI_API_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
 
 // ─── Daily Quota Tracker (SQLite) ────────────────────────────────────────────
 
@@ -21,7 +21,7 @@ const upsertQuota = db.prepare(`
   ON CONFLICT(date) DO UPDATE SET req_count = req_count + 1
 `);
 
-const DAILY_REQ_LIMIT = 480;
+const DAILY_REQ_LIMIT = 1480; // gemini-2.0-flash free tier: 1500/day, keep 20 buffer
 
 function getTodayKey() {
   return new Date().toISOString().slice(0, 10);
@@ -97,23 +97,6 @@ const BASE_SYSTEM_PROMPT = `You are Advika, a Discord chatbot with a very specif
 
 You're Advika. Be her. Keep it natural.`;
 
-// ─── Build dynamic system prompt (injects special user rule if needed) ────────
-
-function buildSystemPrompt(username) {
-  const specialUser = process.env.SPECIAL_USER?.trim();
-  const specialReply =
-    process.env.SPECIAL_USER_REPLY?.trim() || "tu muh band rakh 🙄";
-
-  if (specialUser && username === specialUser) {
-    return (
-      BASE_SYSTEM_PROMPT +
-      `\n\n**SPECIAL RULE FOR THIS USER:**\nThis user's name is "${specialUser}". No matter what they say, ALWAYS reply with exactly: "${specialReply}". Nothing else. Just that line.`
-    );
-  }
-
-  return BASE_SYSTEM_PROMPT;
-}
-
 // ─── Build Context ────────────────────────────────────────────────────────────
 
 function buildContextMessage(guild_id, user_id, username, recentChannelMsgs) {
@@ -163,6 +146,14 @@ export async function getAdvikaReply(
   },
   retries = 2,
 ) {
+  // ── Special user — short circuit, zero API calls ─────────────────────────
+  const specialUser = process.env.SPECIAL_USER?.trim();
+  if (specialUser && username === specialUser) {
+    const specialReply =
+      process.env.SPECIAL_USER_REPLY?.trim() || "tu muh band rakh 🙄";
+    return specialReply;
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY not set");
 
@@ -173,7 +164,7 @@ export async function getAdvikaReply(
     return null;
   }
 
-  const systemPrompt = buildSystemPrompt(username);
+  const systemPrompt = BASE_SYSTEM_PROMPT;
   const contextMsg = buildContextMessage(
     guild_id,
     user_id,
